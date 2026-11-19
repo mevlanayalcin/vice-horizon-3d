@@ -8,6 +8,7 @@ import { createVehicle, updateVehicle } from './vehicles.js';
 import { characterColors } from './combat.js';
 
 const CAR_TYPES = ['sedan', 'taxi', 'coupe', 'muscle', 'van', 'sedan', 'coupe', 'sedan', 'muscle'];
+const CAR_PAINTS = [0xf1efe6, 0xd6452f, 0x2f7fbf, 0x3f9e7a, 0x8f5bb8, 0xe0a83c, 0x37414d, 0xc85f8a, 0x5fb8c8, 0xdf7a3a];
 const LOOP_X = [[-390, -260], [-260, -130], [-130, 0], [0, 130], [130, 260], [260, 390]];
 const LOOP_Z = [[-390, -260], [-260, -130], [-130, 0], [0, 130], [130, 260]];
 
@@ -77,6 +78,8 @@ export function createTraffic(world, options = {}) {
     car.x = pos.x; car.z = pos.z;
     car.heading = pos.heading;
     car.colors = characterColors(random(), 'civ');
+    car.color = rgb(CAR_PAINTS[Math.floor(random() * CAR_PAINTS.length)]);
+    car.accent = rgb(CAR_PAINTS[Math.floor(random() * CAR_PAINTS.length)]);
     return car;
   }
 
@@ -110,8 +113,8 @@ export function createTraffic(world, options = {}) {
     return ped;
   }
 
-  for (let i = 0; i < 22; i += 1) makeTrafficCar(i);
-  for (let i = 0; i < 30; i += 1) makePed(i);
+  for (let i = 0; i < 30; i += 1) makeTrafficCar(i);
+  for (let i = 0; i < 42; i += 1) makePed(i);
 
   // A few beach/sunset loiterers for the boardwalk shot and free-roam life.
   const loiterSpots = [

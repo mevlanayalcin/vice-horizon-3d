@@ -73,6 +73,11 @@ export function createHud({ onAction, world }) {
     rpm: byId('rpmFill'),
     nitro: byId('nitroFill'),
     drift: byId('driftTag'),
+    cityProgress: byId('cityProgress'),
+    cpDistricts: byId('cpDistricts'),
+    cpPips: byId('cpPips'),
+    cpJobs: byId('cpJobs'),
+    cpSafehouse: byId('cpSafehouse'),
     hints: byId('controlsHint'),
     damage: byId('damageFlash'),
     speedLines: byId('speedLines'),
@@ -478,6 +483,17 @@ export function createHud({ onAction, world }) {
 
     // Prompt.
     setPrompt(prompt);
+
+    // City progression: districts explored, side jobs cleared, safehouse owned.
+    if (state.city && els.cityProgress) {
+      const city = state.city;
+      setText(els.cpDistricts, `${city.districts ?? 0} / 6 DISTRICTS`);
+      setText(els.cpJobs, `SIDE JOBS ${city.tokens ?? 0} / 12`);
+      setText(els.cpSafehouse, city.safehouse ? 'SAFEHOUSE OWNED' : 'SAFEHOUSE LOCKED');
+      els.cpSafehouse.classList.toggle('locked', !city.safehouse);
+      [...els.cpPips.children].forEach((pip, i) => pip.classList.toggle('on', i < (city.districts ?? 0)));
+      els.cityProgress.classList.remove('hidden');
+    }
 
     drawMinimap({
       player, vehicle, wanted, evasion, policeCars, trafficCars, parkedCars, targetVehicle,

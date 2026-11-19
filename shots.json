@@ -1,6 +1,6 @@
 [
-  { "name": "1-start.jpg", "query": "?shot=start", "caption": "Golden hour on the Palm Strip: the Solaris GT on the coastal boulevard, live HUD and Sunset FM." },
-  { "name": "2-chase.jpg", "query": "?shot=chase", "caption": "Four-star pursuit at sunset: cruisers boxing in the supercar, sirens lit, speedometer and wanted stars." },
-  { "name": "3-action.jpg", "query": "?shot=combat", "caption": "On foot at Coral Pier: SMG firefight, gold objective on the HUD, health and armour, cop backup rolling in." },
-  { "name": "4-night.jpg", "query": "?shot=night", "caption": "Neon night on Coral Pier: the lit wheel, the briefcase waypoint under it, and the pier's glowing shops." }
+  { "name": "1-start.jpg", "query": "?shot=start", "caption": "Golden hour on the Palm Strip: the Solaris GT on the palm-lined coastal boulevard past lit Art Deco hotels, with the pier wheel over the turquoise bay and the full live HUD." },
+  { "name": "2-chase.jpg", "query": "?shot=chase", "caption": "Four-star twilight pursuit: cruisers boxing in the supercar, red and blue siren pools on the wet boulevard, a searchlight helicopter and a roadblock ahead, stars and speedo lit." },
+  { "name": "3-action.jpg", "query": "?shot=combat", "caption": "On foot at Coral Pier: over-the-shoulder SMG firefight with muzzle flash, tracers and hit sparks, the mission objective on the HUD, health and armour, and a police cruiser rolling in." },
+  { "name": "4-night.jpg", "query": "?shot=night", "caption": "Midnight over Neon Midtown and the Palm Strip: the hero car's lights on the wet boulevard, blazing lit towers and neon hotels, the Ferris wheel turning over the bay, and the city-progress badge." }
 ]

@@ -375,19 +375,53 @@ uniform float uNight;
 uniform float uTime;
 out vec4 fragColor;
 ${TONEMAP_GLSL}
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
 void main() {
   vec3 N = normalize(vNormal);
-  float ndl = max(dot(N, normalize(uSunDir)), 0.0);
-  float wrap = max(dot(N, normalize(uSunDir)) * 0.5 + 0.5, 0.0);
+  vec3 sun = normalize(uSunDir);
+  float ndl = max(dot(N, sun), 0.0);
+  float wrap = max(dot(N, sun) * 0.5 + 0.5, 0.0);
   vec3 amb = mix(uGroundAmb, uSkyAmb, N.y * 0.5 + 0.5);
   vec3 base = vColor * (amb * mix(0.95, 0.84, uNight)
     + uSunColor * (ndl * 0.80 + wrap * 0.14) * mix(1.0, 0.62, uNight));
+  // Skylight fill on faces turned away from the sun, so characters and facades
+  // keep their colour in shadow instead of crushing to black.
+  base += vColor * uSkyAmb * (1.0 - ndl) * (1.0 - abs(N.y)) * 0.30;
+
+  // --- procedural surface detail: no textures, just stable world-space patterns.
+  float horizontal = smoothstep(0.72, 0.97, abs(N.y));
+  float vertical = 1.0 - smoothstep(0.18, 0.6, abs(N.y));
+  // Fine grain + coarse repairs on asphalt, concrete and sand.
+  float grain = hash21(floor(vWorld.xz * 7.0)) - 0.5;
+  float coarse = hash21(floor(vWorld.xz * 0.31) + 4.7) - 0.5;
+  base *= 1.0 + horizontal * (grain * 0.085 + coarse * 0.14);
+  // Floor trims, mullions and awnings read as bands on vertical facades.
+  float floorBand = smoothstep(0.82, 1.0, fract(vWorld.y / 3.55));
+  float bandFade = smoothstep(2.5, 7.0, vWorld.y) * (1.0 - smoothstep(70.0, 140.0, vWorld.y));
+  base *= 1.0 - vertical * floorBand * bandFade * 0.16;
+  float mullion = smoothstep(0.44, 0.5, abs(fract(vWorld.x * 0.22 + vWorld.z * 0.22) - 0.5));
+  base *= 1.0 + vertical * mullion * smoothstep(4.0, 12.0, vWorld.y) * 0.07;
+  // Street-level ambient occlusion under towers and awnings.
+  float groundAO = mix(0.74, 1.0, smoothstep(0.0, 11.0, vWorld.y));
+  base *= mix(1.0, groundAO, vertical * (1.0 - clamp(vEmit, 0.0, 1.0)));
+
   vec3 V = normalize(uCamPos - vWorld);
-  vec3 H = normalize(V + normalize(uSunDir));
+  vec3 H = normalize(V + sun);
   float spec = pow(max(dot(N, H), 0.0), 34.0) * 0.16;
   base += uSunColor * spec;
+  // A broad sheen on flat surfaces sells sunlit stone and rain-washed asphalt.
+  float sheen = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 2.6) * horizontal;
+  base += mix(uSkyAmb, uSunColor, 0.35) * sheen * (0.10 + uNight * 0.10);
+  // Neon light spilled on the pavement: a warm/cool wash at street level.
+  float spill = smoothstep(9.0, 0.0, vWorld.y) * horizontal * uNight;
+  base += vec3(0.22, 0.10, 0.30) * spill * (0.45 + coarse * 0.6);
+
   float lit = vEmit > 0.85 ? 1.0 : mix(0.2, 1.0, uNight);
-  vec3 emission = vColor * vEmit * lit * (vEmit > 0.85 ? 1.55 : 1.25);
+  vec3 emission = vColor * vEmit * lit * (vEmit > 0.85 ? 1.8 : 1.4);
   vec3 col = base * (1.0 - clamp(vEmit, 0.0, 1.0) * 0.7) + emission;
   float dist = length(uCamPos - vWorld);
   float fog = 1.0 - exp(-dist * uFogDensity);
@@ -431,29 +465,45 @@ uniform float uTime;
 uniform float uNight;
 out vec4 fragColor;
 float hash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
 }
 ${TONEMAP_GLSL}
+float waveH(vec2 p) {
+  return sin(p.x * 0.09 + uTime * 1.15) * 0.16
+       + sin(p.y * 0.13 - uTime * 0.85) * 0.13
+       + sin((p.x + p.y) * 0.055 + uTime * 0.55) * 0.22;
+}
 void main() {
-  float e = 0.6;
-  float hx = sin(vWorld.x * 0.35 + uTime * 1.9) * 0.10 + sin(vWorld.z * 0.22 - uTime * 1.3) * 0.08;
-  float hz = cos(vWorld.z * 0.30 + uTime * 1.6) * 0.11 + cos(vWorld.x * 0.18 + uTime * 1.1) * 0.07;
+  vec2 p = vWorld.xz;
+  float hx = sin(p.x * 0.35 + uTime * 1.9) * 0.10 + sin(p.y * 0.22 - uTime * 1.3) * 0.08;
+  float hz = cos(p.y * 0.30 + uTime * 1.6) * 0.11 + cos(p.x * 0.18 + uTime * 1.1) * 0.07;
   vec3 N = normalize(vec3(-hx, 1.0, -hz));
   vec3 V = normalize(uCamPos - vWorld);
+  vec3 sun = normalize(uSunDir);
   float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 3.0);
   float depthT = clamp((vWorld.z - 330.0) / 180.0, 0.0, 1.0);
   float eastT = clamp((vWorld.x - 500.0) / 120.0, 0.0, 1.0);
-  vec3 water = mix(uShallow, uDeep, max(depthT, eastT * 0.85));
+  vec3 water = mix(uShallow * vec3(0.86, 1.14, 1.05), uDeep, max(depthT, eastT * 0.85));
   vec3 sky = mix(uSkyHorizon, uSkyTop, 0.42);
-  vec3 col = mix(water, sky, fres * 0.62);
-  vec3 H = normalize(V + normalize(uSunDir));
-  float spec = pow(max(dot(N, H), 0.0), 220.0);
-  float sparkle = pow(max(dot(N, H), 0.0), 42.0) * (0.35 + hash(floor(vWorld.xz * 4.0 + uTime * 2.0)) * 0.65);
-  col += uSunColor * (spec * 1.5 + sparkle * 0.22);
-  float shore = smoothstep(7.0, 0.0, abs(vWorld.z - 337.0));
-  float ripple = sin(vWorld.z * 1.1 - uTime * 2.6 + sin(vWorld.x * 0.25) * 2.0) * 0.5 + 0.5;
-  col = mix(col, vec3(0.94, 0.98, 0.97), shore * (0.25 + ripple * 0.4));
-  vec3 nightGlow = vec3(0.55, 0.18, 0.62) * uNight * 0.30 * (1.0 - depthT);
+  vec3 col = mix(water, sky, fres * 0.46);
+  // Sun glitter: a broad path toward the sun plus fine animated sparkle on top.
+  vec3 H = normalize(V + sun);
+  float spec = pow(max(dot(N, H), 0.0), 180.0);
+  float path = pow(max(dot(N, H), 0.0), 20.0);
+  float sparkle = pow(max(dot(N, H), 0.0), 46.0) * (0.32 + hash(floor(p * 4.0 + uTime * 2.0)) * 0.68);
+  col += uSunColor * (spec * 1.8 + path * 0.20 + sparkle * 0.30);
+  // Turquoise shore band, surf foam and long rolling crests.
+  float shore = smoothstep(9.0, 0.0, abs(vWorld.z - 337.0));
+  float ripple = sin(vWorld.z * 1.15 - uTime * 2.6 + sin(vWorld.x * 0.22) * 2.0) * 0.5 + 0.5;
+  float foamNoise = hash(floor(p * vec2(2.0, 6.0) + vec2(0.0, uTime * 1.4)));
+  col = mix(col, vec3(0.96, 0.99, 0.98), shore * (0.22 + ripple * 0.42 + foamNoise * 0.16));
+  float crest = smoothstep(0.10, 0.26, waveH(p)) * smoothstep(70.0, 22.0, abs(vWorld.z - 320.0));
+  col += vec3(0.75, 0.93, 0.94) * crest * 0.16;
+  // Magenta / cyan neon shimmer on the night water.
+  vec3 nightGlow = vec3(0.58, 0.18, 0.66) * uNight * 0.34 * (1.0 - depthT);
+  nightGlow += vec3(0.10, 0.42, 0.55) * uNight * 0.18 * (0.4 + fres);
   col += nightGlow * (0.4 + fres);
   float dist = length(uCamPos - vWorld);
   float fog = 1.0 - exp(-dist * uFogDensity);
@@ -488,7 +538,9 @@ uniform float uTime;
 uniform vec2 uResolution;
 out vec4 fragColor;
 float hash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
 }
 float noise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -518,15 +570,20 @@ void main() {
   col = mix(mix(uSkyHorizon, mid, smoothstep(0.0, 0.30, t)), col, smoothstep(0.22, 1.0, t));
   col *= mix(1.0, 0.86, smoothstep(0.3, 1.0, t));
   float sd = max(dot(dir, normalize(uSunDir)), 0.0);
-  float glow = pow(sd, 8.0) * 0.16 + pow(sd, 64.0) * 0.26 + pow(sd, 400.0) * 0.85;
+  float glow = pow(sd, 8.0) * 0.20 + pow(sd, 64.0) * 0.30 + pow(sd, 400.0) * 0.95;
   col += uSunColor * glow;
-  float horizon = exp(-max(dir.y, 0.0) * 9.0);
-  col += uCityGlow * horizon * (0.12 + uNight * 0.20);
+  float horizon = exp(-max(dir.y, 0.0) * 8.0);
+  col += uCityGlow * horizon * (0.16 + uNight * 0.34);
+  // After dark the city throws magenta and cyan into the low cloud deck.
+  float pollution = exp(-max(dir.y, 0.0) * 5.0) * uNight;
+  col += vec3(0.42, 0.10, 0.46) * pollution * 0.30;
+  col += vec3(0.06, 0.26, 0.34) * pow(max(sd, 0.0), 3.0) * uNight * 0.28;
   vec2 cuv = dir.xz / max(dir.y + 0.16, 0.09) * 0.55 + vec2(uTime * 0.0025, 0.0);
   float cloud = fbm(cuv * 1.2);
-  cloud = smoothstep(0.52, 0.82, cloud) * smoothstep(0.015, 0.18, dir.y);
+  cloud = smoothstep(0.50, 0.80, cloud) * smoothstep(0.015, 0.18, dir.y);
   vec3 cloudColor = mix(uSkyHorizon * 0.9, uSunColor, clamp(pow(sd, 2.0) * 0.9 + 0.18, 0.0, 1.0));
-  col = mix(col, cloudColor, cloud * 0.62);
+  cloudColor = mix(cloudColor, mix(uCityGlow, vec3(0.95, 0.55, 0.75), 0.4), uNight * 0.5);
+  col = mix(col, cloudColor, cloud * 0.68);
   vec3 cell = floor(dir * 330.0);
   float starSeed = hash(cell.xz + cell.y * 17.3);
   float star = smoothstep(0.9975, 1.0, starSeed) * smoothstep(0.02, 0.35, dir.y);

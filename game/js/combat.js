@@ -66,8 +66,8 @@ export function buildCharacter(b, c, time = 0) {
   b.segment(leftKnee, leftFoot, 0.17 * scale, 0.17 * scale, colors.pants, {});
   b.segment(W(hipW, hipY, 0), rightKnee, 0.19 * scale, 0.19 * scale, colors.pants, {});
   b.segment(rightKnee, rightFoot, 0.17 * scale, 0.17 * scale, colors.pants, {});
-  b.box(leftFoot[0], leftFoot[1] + 0.02, leftFoot[2], 0.22 * scale, 0.12 * scale, 0.34 * scale, rgb(0x222328), { rotY: yaw, omitBottom: true });
-  b.box(rightFoot[0], rightFoot[1] + 0.02, rightFoot[2], 0.22 * scale, 0.12 * scale, 0.34 * scale, rgb(0x222328), { rotY: yaw, omitBottom: true });
+  b.box(leftFoot[0], leftFoot[1] + 0.02, leftFoot[2], 0.22 * scale, 0.12 * scale, 0.34 * scale, rgb(0x35383f), { rotY: yaw, omitBottom: true });
+  b.box(rightFoot[0], rightFoot[1] + 0.02, rightFoot[2], 0.22 * scale, 0.12 * scale, 0.34 * scale, rgb(0x35383f), { rotY: yaw, omitBottom: true });
 
   // Torso, jacket and a belt.
   b.box(c.x, torsoY, c.z, 0.5 * scale, 0.62 * scale, 0.3 * scale, colors.shirt, { rotY: yaw, omitBottom: true });
@@ -168,7 +168,7 @@ export function createCombat(world, bus) {
     deathTimer: 0,
     hitFlash: 0,
     lastDamageAt: -10,
-    colors: { skin: rgb(0xc58f68), shirt: rgb(0xe85a44), pants: rgb(0x28374a), hair: rgb(0x1d1a19) },
+    colors: { skin: rgb(0xc58f68), shirt: rgb(0xe85a44), pants: rgb(0x3c4d68), hair: rgb(0x1d1a19) },
     style: 'player',
     longHair: false,
   };
@@ -677,7 +677,7 @@ export function createCombat(world, bus) {
     // Muzzle flashes and enemy muzzle heat.
     for (const t of tracers) {
       const life = clamp(t.life / t.maxLife, 0, 1);
-      add(t.x1, t.y1, t.z1, t.color, 0.8 * life + 0.2, life * 0.9);
+      add(t.x1, t.y1, t.z1, t.color, 0.34 * life + 0.12, life * 0.8);
     }
     for (const p of particles) {
       add(p.x, p.y, p.z, p.color, p.size * 0.8, clamp(p.life / p.maxLife, 0, 1) * 0.6);

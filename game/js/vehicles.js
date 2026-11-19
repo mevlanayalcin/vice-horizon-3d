@@ -265,6 +265,11 @@ export function buildVehicle(b, v, time = 0, opts = {}) {
     const [wx, wz] = place(lx, lz);
     b.box(wx, baseY + ly, wz, sx, sy, sz, color, { rotY: yaw, omitBottom: true, ...extra });
   };
+  // A flat panel between four points in car-local space, for sloped glass.
+  const panel = (a, b2, c, d, color, extra = {}) => {
+    const P = (p) => { const [wx, wz] = place(p[0], p[2]); return [wx, baseY + p[1], wz]; };
+    b.quad(P(a), P(b2), P(c), P(d), color, { ...extra });
+  };
 
   // Shadow of the car is drawn separately on the ground.
   // Chassis / lower body.
@@ -278,17 +283,37 @@ export function buildVehicle(b, v, time = 0, opts = {}) {
   if (v.type === 'van') {
     boxAt(0, 1.32, -L * 0.08, W * 0.96, 1.52, L * 0.8, body);
     boxAt(0, 1.35, L * 0.3, W * 0.9, 0.7, 0.1, glass, { e: 0.3 });
+    panel([-W * 0.45, 0.86, L * 0.46], [W * 0.45, 0.86, L * 0.46], [W * 0.43, 1.68, L * 0.28], [-W * 0.43, 1.68, L * 0.28], glass, { e: 0.5 });
     boxAt(0, 1.9, -L * 0.05, W * 0.94, 0.14, L * 0.8, shade(body, 0.9));
-    boxAt(W * 0.4, 1.4, L * 0.15, W * 0.16, 0.7, 0.08, glass, { e: 0.25 });
-    boxAt(-W * 0.4, 1.4, L * 0.15, W * 0.16, 0.7, 0.08, glass, { e: 0.25 });
+    boxAt(W * 0.4, 1.4, L * 0.15, W * 0.16, 0.7, 0.08, glass, { e: 0.4 });
+    boxAt(-W * 0.4, 1.4, L * 0.15, W * 0.16, 0.7, 0.08, glass, { e: 0.4 });
+    // Rear cargo doors with hinges and a roof ladder.
+    boxAt(0, 1.3, -L * 0.49, W * 0.8, 1.5, 0.06, shade(body, 0.86));
+    boxAt(0, 1.3, -L * 0.495, 0.05, 1.4, 0.05, rgb(0x2a2c30));
   } else {
-    // Cabin and glass.
-    const cabinH = v.type === 'muscle' ? 0.48 : 0.42;
-    boxAt(0, 0.78 + cabinH / 2, -L * 0.06, W * 0.78, cabinH, L * 0.44, glass, { e: 0.22 });
-    boxAt(0, 0.8 + cabinH, -L * 0.08, W * 0.74, 0.08, L * 0.4, shade(body, 0.9));
-    // Roof rails / A and B pillars.
-    boxAt(W * 0.37, 1.0, -L * 0.06, 0.08, 0.5, L * 0.36, shade(body, 0.82));
-    boxAt(-W * 0.37, 1.0, -L * 0.06, 0.08, 0.5, L * 0.36, shade(body, 0.82));
+    // Sloped greenhouse: raked windshield, tapered roof, tinted fastback glass.
+    const roofY = v.type === 'muscle' ? 1.24 : v.type === 'supercar' ? 1.10 : 1.17;
+    const roofFront = L * 0.02;
+    const roofBack = -L * 0.26;
+    const beltY = 0.86;
+    // Windscreen and rear screen (tinted, slightly reflective).
+    panel([-W * 0.35, beltY, L * 0.21], [W * 0.35, beltY, L * 0.21],
+      [W * 0.31, roofY, roofFront], [-W * 0.31, roofY, roofFront], glass, { e: 0.55 });
+    panel([W * 0.34, beltY, -L * 0.40], [-W * 0.34, beltY, -L * 0.40],
+      [-W * 0.30, roofY, roofBack], [W * 0.30, roofY, roofBack], shade(glass, 0.9), { e: 0.4 });
+    // Side glass, split by a B-pillar.
+    for (const side of [-1, 1]) {
+      panel([side * W * 0.355, beltY + 0.02, L * 0.18], [side * W * 0.355, beltY + 0.02, -L * 0.03],
+        [side * W * 0.315, roofY - 0.02, -L * 0.05], [side * W * 0.315, roofY - 0.02, roofFront], glass, { e: 0.45, n: [side * 0.94, 0.34, 0] });
+      panel([side * W * 0.355, beltY + 0.02, -L * 0.07], [side * W * 0.355, beltY + 0.02, -L * 0.36],
+        [side * W * 0.315, roofY - 0.02, roofBack], [side * W * 0.315, roofY - 0.02, -L * 0.09], shade(glass, 0.95), { e: 0.38, n: [side * 0.94, 0.34, 0] });
+      boxAt(side * W * 0.335, (beltY + roofY) / 2, -L * 0.05, 0.07, roofY - beltY, 0.09, shade(body, 0.7));
+    }
+    // Roof panel and pillars.
+    boxAt(0, roofY + 0.02, (roofFront + roofBack) / 2, W * 0.6, 0.09, roofFront - roofBack, shade(body, 0.94));
+    for (const side of [-1, 1]) {
+      boxAt(side * W * 0.335, beltY + (roofY - beltY) / 2, L * 0.2, 0.08, roofY - beltY + 0.05, 0.1, shade(body, 0.84));
+    }
     // Hood and boot seams.
     boxAt(0, 0.73, L * 0.33, W * 0.86, 0.06, L * 0.24, shade(body, 1.1));
     boxAt(0, 0.72, -L * 0.34, W * 0.86, 0.05, L * 0.18, shade(body, 0.85));
@@ -300,30 +325,49 @@ export function buildVehicle(b, v, time = 0, opts = {}) {
   boxAt(0, 0.32, 0, W * 0.86, 0.18, L * 0.7, shade(body, 0.75));
   boxAt(0, 0.62, L * 0.505, W * 0.32, 0.16, 0.06, rgb(0x24262a));
 
-  // Headlights and taillights.
+  // Headlights and taillights: LED strips plus individual lamps.
   const lightY = v.headlightLift ? 0.65 : 0.62;
   for (const side of [-1, 1]) {
     boxAt(side * W * 0.33, lightY, L * 0.5, W * 0.18, 0.14, 0.1, rgb(0xfff3d2), { e: 1 });
-    boxAt(side * W * 0.34, lightY, -L * 0.5, W * 0.17, 0.13, 0.09, v.braking ? rgb(0xff5a4d) : rgb(0x9e231c), { e: v.braking ? 1 : 0.45 });
+    boxAt(side * W * 0.34, lightY, -L * 0.5, W * 0.17, 0.13, 0.09, v.braking ? rgb(0xff6a5a) : rgb(0xd8322a), { e: v.braking ? 1 : 0.6 });
   }
-  // Wheels.
+  boxAt(0, lightY + 0.01, L * 0.505, W * 0.5, 0.045, 0.05, rgb(0xfff6e0), { e: 1 });
+  boxAt(0, lightY + 0.01, -L * 0.505, W * 0.52, 0.045, 0.05, v.braking ? rgb(0xff7a66) : rgb(0x8e201a), { e: v.braking ? 1 : 0.45 });
+  // Front splitter and rear diffuser.
+  boxAt(0, 0.24, L * 0.47, W * 0.82, 0.08, 0.34, rgb(0x1c1e23));
+  boxAt(0, 0.26, -L * 0.47, W * 0.78, 0.1, 0.3, rgb(0x1c1e23));
+  // Wheels with arches and metallic rims.
   const wheelR = spec.wheelRadius;
   const axles = [L * 0.32, -L * 0.32];
   for (const az of axles) {
     for (const side of [-1, 1]) {
       const [wx, wz] = place(side * (W / 2 - 0.02), az);
-      b.wheel(wx, baseY + wheelR, wz, wheelR, 0.32, rgb(0x16171b), rim, { rotY: yaw, sides: 10 });
-      boxAt(side * W * 0.52, 0.46, az, 0.06, 0.3, 0.3, dark);
+      // Flared arch in body colour, with a dark inner lip.
+      boxAt(side * (W / 2 - 0.03), wheelR + 0.33, az, 0.14, 0.2, wheelR * 2.25, shade(body, 0.92));
+      boxAt(side * (W / 2 + 0.02), wheelR + 0.1, az, 0.06, wheelR * 1.9, wheelR * 2.3, rgb(0x141519));
+      b.wheel(wx, baseY + wheelR, wz, wheelR, 0.32, rgb(0x16171b), rim, { rotY: yaw, sides: 12 });
+      // Bright hub detail so the rims read at speed.
+      boxAt(side * (W / 2 + 0.05), wheelR, az, 0.04, 0.13, 0.13, rim, { e: 0.18 });
     }
+  }
+  // Side mirrors.
+  for (const side of [-1, 1]) {
+    boxAt(side * (W * 0.55), 0.95, L * 0.13, 0.16, 0.11, 0.26, shade(body, 0.9));
   }
 
   if (v.type === 'coupe' || v.type === 'supercar') {
-    boxAt(0, 0.92, -L * 0.28, W * 0.68, 0.08, 0.35, shade(body, 0.68));
-    boxAt(W * 0.28, 0.85, -L * 0.28, 0.08, 0.25, 0.28, shade(body, 0.7));
-    boxAt(-W * 0.28, 0.85, -L * 0.28, 0.08, 0.25, 0.28, shade(body, 0.7));
+    // Rear wing on struts, plus a lit accent blade.
+    const wingY = v.type === 'supercar' ? 1.06 : 1.0;
+    boxAt(0, wingY, -L * 0.45, W * 0.74, 0.07, 0.44, shade(body, 0.74));
+    boxAt(0, wingY + 0.045, -L * 0.46, W * 0.72, 0.03, 0.1, accent, { e: 0.45 });
+    for (const side of [-1, 1]) {
+      boxAt(side * W * 0.27, wingY - 0.17, -L * 0.44, 0.07, 0.34, 0.16, shade(body, 0.8));
+    }
     // Side accent swoosh.
-    boxAt(W * 0.5 * 0.99, 0.58, 0.05, 0.03, 0.14, L * 0.4, accent, { top: accent });
-    boxAt(-W * 0.5 * 0.99, 0.58, 0.05, 0.03, 0.14, L * 0.4, accent, { top: accent });
+    boxAt(W * 0.5 * 0.99, 0.58, 0.05, 0.03, 0.14, L * 0.4, accent, { top: accent, e: 0.25 });
+    boxAt(-W * 0.5 * 0.99, 0.58, 0.05, 0.03, 0.14, L * 0.4, accent, { top: accent, e: 0.25 });
+    // Twin exhaust tips.
+    for (const side of [-1, 1]) boxAt(side * W * 0.18, 0.3, -L * 0.505, 0.11, 0.1, 0.1, rgb(0xb9bcc0), { e: 0.15 });
   }
   if (v.type === 'muscle') {
     boxAt(0, 0.84, L * 0.28, W * 0.5, 0.09, 0.5, rgb(0x24262a));
@@ -378,18 +422,28 @@ export function vehicleGlow(v, time, add) {
   const head = [v.x + forward[0] * spec.length * 0.52, v.y + 0.65, v.z + forward[1] * spec.length * 0.52];
   const tail = [v.x - forward[0] * spec.length * 0.52, v.y + 0.62, v.z - forward[1] * spec.length * 0.52];
   for (const side of [-1, 1]) {
-    add(head[0] + right[0] * side * spec.width * 0.32, head[1], head[2] + right[1] * side * spec.width * 0.32, rgb(0xfff0c8), 0.55, 0.5);
+    add(head[0] + right[0] * side * spec.width * 0.32, head[1], head[2] + right[1] * side * spec.width * 0.32, rgb(0xfff0c8), 0.55, 0.55);
+    add(tail[0] + right[0] * side * spec.width * 0.32, tail[1], tail[2] + right[1] * side * spec.width * 0.32, rgb(0xff2a22), 0.5, v.braking ? 0.8 : 0.34);
   }
-  if (v.braking) {
+  // Light pools on the asphalt: warm ahead, red behind.
+  const fx = forward[0], fz = forward[1];
+  add(v.x + fx * spec.length * 0.86, v.y + 0.09, v.z + fz * spec.length * 0.86, rgb(0xffe3aa), 2.9, 0.2);
+  add(v.x - fx * spec.length * 0.72, v.y + 0.08, v.z - fz * spec.length * 0.72, rgb(0xff2a22), 2.1, v.braking ? 0.34 : 0.18);
+  if (v.boosting) {
     for (const side of [-1, 1]) {
-      add(tail[0] + right[0] * side * spec.width * 0.32, tail[1], tail[2] + right[1] * side * spec.width * 0.32, rgb(0xff2a22), 0.75, 0.7);
+      add(v.x - fx * spec.length * 0.54 + right[0] * side * spec.width * 0.18, v.y + 0.36,
+        v.z - fz * spec.length * 0.54 + right[1] * side * spec.width * 0.18, rgb(0xff8a2a), 0.9, 0.85);
     }
+    add(v.x - fx * spec.length * 0.6, v.y + 0.4, v.z - fz * spec.length * 0.6, rgb(0x55d8ff), 1.2, 0.5);
   }
   if (v.police && v.sirenOn) {
     const phase = Math.floor((time + (v.sirenPhase ?? 0) * 0.5) * 7) % 2;
     const roof = [v.x - forward[0] * spec.length * 0.08, v.y + 1.5, v.z - forward[1] * spec.length * 0.08];
-    add(roof[0] - right[0] * 0.28, roof[1], roof[2] - right[1] * 0.28, rgb(0xff2a3d), phase ? 2.5 : 1.1, phase ? 0.9 : 0.22);
-    add(roof[0] + right[0] * 0.28, roof[1], roof[2] + right[1] * 0.28, rgb(0x2f6bff), phase ? 1.1 : 2.5, phase ? 0.22 : 0.9);
+    add(roof[0] - right[0] * 0.28, roof[1], roof[2] - right[1] * 0.28, rgb(0xff2a3d), phase ? 3.0 : 1.6, phase ? 0.95 : 0.4);
+    add(roof[0] + right[0] * 0.28, roof[1], roof[2] + right[1] * 0.28, rgb(0x2f6bff), phase ? 1.6 : 3.0, phase ? 0.4 : 0.95);
+    // Red and blue pools washing the wet road under the cruiser.
+    add(v.x - right[0] * 0.9, v.y + 0.06, v.z - right[1] * 0.9, rgb(0xff2438), 4.6, phase ? 0.38 : 0.2);
+    add(v.x + right[0] * 0.9, v.y + 0.06, v.z + right[1] * 0.9, rgb(0x2f6bff), 4.6, phase ? 0.2 : 0.38);
   }
   if (v.mission) {
     add(v.x, v.y + 2.1, v.z, rgb(0xffc24b), 2.2, 0.6);

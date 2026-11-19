@@ -139,9 +139,9 @@ export const SKY_PRESETS = {
   night: {
     name: 'Neon Night', clock: '22:18',
     sunDir: [-0.28, 0.78, -0.42],
-    sunColor: rgb(0x93aade), skyTop: rgb(0x03050f), skyHorizon: rgb(0x231a45),
-    fogColor: rgb(0x12122e), fogDensity: 0.0022, ambientSky: rgb(0x5a5f9e), ambientGround: rgb(0x2b2438),
-    sunGlow: rgb(0x9db0e2), cityGlow: rgb(0xb05fc2), night: 1.0, stars: 1.0, sunSize: 0.9995, exposure: 1.0,
+    sunColor: rgb(0x93aade), skyTop: rgb(0x080f2a), skyHorizon: rgb(0x2c1f4e),
+    fogColor: rgb(0x1a1740), fogDensity: 0.00115, ambientSky: rgb(0x6f76b8), ambientGround: rgb(0x3a3050),
+    sunGlow: rgb(0x9db0e2), cityGlow: rgb(0xc76ad4), night: 1.0, stars: 1.0, sunSize: 0.9995, exposure: 1.0,
   },
   dawn: {
     name: 'Dawn', clock: '06:10',
