@@ -1,5 +1,6 @@
 [
-  { "name": "1-start.jpg", "query": "?shot=start&seed=1" },
-  { "name": "2-play.jpg", "query": "?shot=play&seed=1" },
-  { "name": "3-end.jpg", "query": "?shot=end&seed=1" }
+  { "name": "1-start.jpg", "query": "?shot=start", "caption": "Golden hour on the Palm Strip: the Solaris GT on the coastal boulevard, live HUD and Sunset FM." },
+  { "name": "2-chase.jpg", "query": "?shot=chase", "caption": "Four-star pursuit at sunset: cruisers boxing in the supercar, sirens lit, speedometer and wanted stars." },
+  { "name": "3-action.jpg", "query": "?shot=combat", "caption": "On foot at Coral Pier: SMG firefight, gold objective on the HUD, health and armour, cop backup rolling in." },
+  { "name": "4-night.jpg", "query": "?shot=night", "caption": "Neon night on Coral Pier: the lit wheel, the briefcase waypoint under it, and the pier's glowing shops." }
 ]
