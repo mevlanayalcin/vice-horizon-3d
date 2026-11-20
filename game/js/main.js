@@ -1,22 +1,25 @@
-// main.js — boot, the fixed 60 Hz loop, input, camera, the title/pause/mission state
-// machine, day cycle, and the deterministic staging used by the four screenshots.
-// It wires the renderer, city, combat, traffic, police, missions, audio, HUD and save
-// slots together; nothing here reaches the network.
+// main.js — boot, the fixed 60 Hz loop, input, follow camera and the title / play /
+// pause / city-menu state machine. It wires the renderer, city, traffic, police,
+// combat, missions, side activities, progression, audio, HUD, city menu, save slots
+// and photo mode together; nothing here reaches the network.
 
-import {
-  CITY, DAY_CYCLE, PALETTE, SAFEHOUSE, SKY_PRESETS, STEP, TAU,
-  WEAPONS, clamp, createRandom, lerp, mix3, rgb, shade,
-} from './config.js';
+import { PALETTE, SAFEHOUSE, STEP, clamp, createRandom, lerp } from './config.js';
 import { createRenderer, cross3, normalize3 } from './renderer3d.js';
-import { MeshBuilder } from './meshkit.js';
 import { createWorld } from './world.js';
-import { createVehicle, updateVehicle, buildVehicle, buildHelicopter, vehicleGlow } from './vehicles.js';
+import { envAtHour, timeNameAt, clockAt } from './daycycle.js';
+import { createVehicle, updateVehicle } from './vehicles.js';
 import { createTraffic } from './traffic.js';
 import { createPolice } from './police.js';
-import { createCombat, buildCharacter } from './combat.js';
+import { createCombat } from './combat.js';
 import { createMissions, MISSIONS } from './missions.js';
+import { createActivities } from './activities.js';
+import { createProgression } from './progression.js';
+import { buildDynamicScene } from './scene.js';
+import { createCameraRig } from './camera.js';
 import { createAudio } from './audio.js';
 import { createHud } from './hud.js';
+import { createCityMenu } from './citymenu.js';
+import { createShotStage } from './shotstage.js';
 import { createSave, snapshot, applySnapshot } from './save.js';
 
 const canvas = document.getElementById('game');
@@ -46,6 +49,8 @@ const bus = {
   },
   onEvaded: () => {
     hud.notify('EVADED · wanted level clear', 'mission');
+    progression.count('evaded');
+    progression.addRespect(50, 'EVADED');
   },
   onPoliceSpawned: () => {},
   onOfficers: () => hud.notify('Officers deploying', 'wanted', 2200),
@@ -67,6 +72,7 @@ const bus = {
   onHitEnemy: () => hud.hitmarker(),
   onKill: (enemy) => {
     hud.hitmarker();
+    progression.count('takedowns');
     if (enemy.police) police.raise(2, 'Officer down');
     else if (!enemy.mission && police.wanted < 4) police.raise(1, 'Homicide');
     if (audio.ready) audio.playPickup('cash');
@@ -130,9 +136,12 @@ const traffic = createTraffic(world, { seed: 0x7ad10c });
 const combat = createCombat(world, bus);
 const police = createPolice(world, combat, bus);
 const missions = createMissions({ world, combat, police, bus });
+const progression = createProgression({ combat, bus });
+const activities = createActivities({ combat, bus, progression });
+const cityMenu = createCityMenu({ painter: hud.painter, missions, activities, progression, combat, police });
 
 const game = {
-  renderer, world, audio, combat, traffic, police, missions, hud, save,
+  renderer, world, audio, combat, traffic, police, missions, activities, progression, hud, save,
   tokens, pickups, hour: 18.62, playTime: 0,
   get cash() { return combat.player.cash; },
 };
@@ -141,10 +150,6 @@ let currentVehicle = null;
 let mode = isShot ? 'shot' : 'title';
 let playTime = 0;
 let elapsed = 0;
-let cameraYaw = Math.PI;
-let cameraPitch = 0.18;
-let cameraOffsetYaw = 0;
-let cameraShake = 0;
 let sirenDistance = Infinity;
 let mouseDown = false;
 let aimDown = false;
@@ -153,6 +158,7 @@ let lastCrimeAt = -9;
 let deathHandled = false;
 const visitedDistricts = new Set(['palm']);
 let stageCity = null;
+let menuRedraw = 0;
 
 /** Everything the city-progress chip needs; staged shots pin their own numbers. */
 function cityProgress() {
@@ -165,14 +171,8 @@ function cityProgress() {
   };
 }
 
-const camera = {
-  pos: [80, 26, 430],
-  target: [0, 8, 150],
-  fov: 58,
-  up: [0, 1, 0],
-  right: [1, 0, 0],
-  forward: [0, 0, -1],
-};
+const rig = createCameraRig(world);
+const camera = rig.camera;
 
 const keys = new Set();
 const pressedKeys = new Set();
@@ -207,70 +207,6 @@ function findVehicleNear(x, z, maxDist = 7) {
 
 function canEnter(car) {
   return car && !car.police;
-}
-
-// ---------------------------------------------------------------------------
-// Environment / day cycle
-// ---------------------------------------------------------------------------
-function envAtHour(hourInput) {
-  const hour = ((hourInput % 24) + 24) % 24;
-  const stops = [
-    { h: 0, p: 'night' }, { h: 4.7, p: 'night' }, { h: 6.2, p: 'dawn' },
-    { h: 9.2, p: 'day' }, { h: 17.2, p: 'day' }, { h: 18.85, p: 'golden' },
-    { h: 19.65, p: 'sunset' }, { h: 20.7, p: 'night' }, { h: 24, p: 'night' },
-  ];
-  let a = stops[0], b = stops[1];
-  for (let i = 0; i < stops.length - 1; i += 1) {
-    if (hour >= stops[i].h && hour <= stops[i + 1].h) {
-      a = stops[i]; b = stops[i + 1];
-      break;
-    }
-  }
-  const t = b.h === a.h ? 0 : (hour - a.h) / (b.h - a.h);
-  const A = SKY_PRESETS[a.p];
-  const Bp = SKY_PRESETS[b.p];
-  const mixColor = (key) => mix3(A[key], Bp[key], t);
-  const num = (key) => lerp(A[key], Bp[key], t);
-  const dir = normalize3([
-    lerp(A.sunDir[0], Bp.sunDir[0], t),
-    lerp(A.sunDir[1], Bp.sunDir[1], t),
-    lerp(A.sunDir[2], Bp.sunDir[2], t),
-  ]);
-  const night = num('night');
-  return {
-    name: timeNameAt(hour),
-    sunDir: dir,
-    sunColor: mixColor('sunColor'),
-    skyTop: mixColor('skyTop'),
-    skyHorizon: mixColor('skyHorizon'),
-    fogColor: mixColor('fogColor'),
-    ambientSky: mixColor('ambientSky'),
-    ambientGround: mixColor('ambientGround'),
-    sunGlow: mixColor('sunGlow'),
-    cityGlow: mixColor('cityGlow'),
-    fogDensity: num('fogDensity'),
-    night,
-    stars: num('stars'),
-    sunSize: A.sunSize,
-    exposure: 1,
-    deepWater: mix3(rgb(0x0a3e5e), rgb(0x0a1d42), night),
-    shallowWater: mix3(rgb(0x2fc9bd), rgb(0x12505f), night * 0.85),
-  };
-}
-
-function timeNameAt(hour) {
-  if (hour >= 5.4 && hour < 8.2) return 'DAWN';
-  if (hour >= 8.2 && hour < 17.4) return 'HIGH SUN';
-  if (hour >= 17.4 && hour < 19.35) return 'GOLDEN HOUR';
-  if (hour >= 19.35 && hour < 20.4) return 'SUNSET';
-  return 'NEON NIGHT';
-}
-
-function clockAt(hour) {
-  const total = Math.floor(hour * 60) % (24 * 60);
-  const h = Math.floor(total / 60);
-  const m = total % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 function getEnv() {
@@ -314,12 +250,14 @@ function newGame(startMission = true) {
   combat.clearEnemies();
   for (const token of tokens) token.taken = false;
   for (const pickup of pickups) { pickup.taken = false; pickup.respawn = 0; }
+  progression.reset();
+  activities.reset();
   game.hour = 18.62;
   game.playTime = 0;
   playTime = 0;
   currentVehicle = null;
-  cameraYaw = Math.PI;
-  cameraPitch = 0.17;
+  rig.yaw = Math.PI;
+  rig.pitch = 0.17;
   deathHandled = false;
   if (startMission) {
     missions.startMission(0, true);
@@ -348,8 +286,8 @@ function continueGame() {
   currentVehicle = null;
   p.inVehicle = null;
   if (p.x === undefined) p.x = world.spawn.x;
-  cameraYaw = Math.PI;
-  cameraPitch = 0.17;
+  rig.yaw = Math.PI;
+  rig.pitch = 0.17;
   deathHandled = false;
   police.clear();
   combat.clearEnemies();
@@ -406,6 +344,38 @@ function resumeGame() {
   hud.showPause(false);
 }
 
+/** Open the city menu (map, story, activities, garage, stats); the city waits. */
+function openCityMenu(tab = 'map') {
+  if (mode !== 'playing' && mode !== 'shot') return;
+  if (mode === 'playing') mode = 'menu';
+  cityMenu.show(tab);
+  cityMenu.render(liveMapState());
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+}
+
+function closeCityMenu() {
+  if (mode !== 'menu') return;
+  mode = 'playing';
+  cityMenu.hide();
+}
+
+/** Everything the minimap and the city map draw, read from the live systems. */
+function liveMapState() {
+  const p = combat.player;
+  return {
+    player: p,
+    vehicle: currentVehicle,
+    policeCars: police.allCars(),
+    trafficCars: traffic.cars,
+    parkedCars: parkedVehicles,
+    waypoint: activities.waypoint() ?? missions.waypoint(),
+    checkpoints: activities.checkpoints,
+    helicopter: police.helicopter,
+    activityStarts: activities.active ? [] : activities.ACTIVITIES,
+    subtitle: `${world.districtName(p.x, p.z)} · ${clockAt(game.hour)} · ${timeNameAt(game.hour)}`,
+  };
+}
+
 function showStoryComplete() {
   mode = 'story';
   hud.showStoryComplete({
@@ -429,6 +399,12 @@ function handleAction(action, data) {
     case 'restart': newGame(true); break;
     case 'quit': quitToTitle(); break;
     case 'freeRoam': mode = 'playing'; hud.hideStoryComplete(); break;
+    case 'menuTab': cityMenu.setTab(data.tab); break;
+    case 'closeMenu': closeCityMenu(); break;
+    case 'buyUpgrade':
+      if (progression.buyUpgrade(data.upgrade) && currentVehicle) progression.tuneVehicle(currentVehicle);
+      cityMenu.render(liveMapState());
+      break;
     case 'toggleSound':
       audio.setMuted(!audio.muted);
       hud.setSoundLabel(!audio.muted);
@@ -451,7 +427,7 @@ function handleAction(action, data) {
         applySnapshot(game, payload);
         currentVehicle = null;
         combat.player.inVehicle = null;
-        cameraYaw = Math.PI;
+        rig.yaw = Math.PI;
         mode = 'playing';
         hud.showPause(false);
         hud.showTitle(false);
@@ -486,7 +462,7 @@ function respawnPlayer() {
   currentVehicle = null;
   police.clear();
   combat.clearEnemies();
-  cameraYaw = Math.PI;
+  rig.yaw = Math.PI;
   hud.notify('Patched up at the Safehouse · -$500', 'warn', 4000);
 }
 
@@ -512,18 +488,24 @@ function enterVehicle(car) {
   car.driver = 'player';
   car.sirenOn = false;
   car.health = Math.max(car.health, 60);
+  progression.tuneVehicle(car);
+  if (!car.playerOwned) {
+    car.playerOwned = true;
+    progression.count('stolen');
+    progression.addRespect(10);
+  }
   currentVehicle = car;
   const p = combat.player;
   p.inVehicle = car;
   p.x = car.x;
   p.z = car.z;
   p.heading = car.heading;
-  cameraYaw = car.heading;
-  cameraOffsetYaw = 0;
+  rig.yaw = car.heading;
+  rig.offsetYaw = 0;
   if (audio.ready) audio.playHorn();
   hud.showPrompt(null);
   hud.notify(`${car.spec.name.toUpperCase()} ACQUIRED`, 'mission', 2200);
-  if (police.wanted === 0 && !car.mission) police.raise(1, 'Grand theft auto');
+  if (police.wanted === 0 && !car.mission) police.raise(1, 'Car theft');
   hud.setPlaying(true, true);
   const hints = 'W / S THROTTLE · A / D STEER · SHIFT NITRO · SPACE HANDBRAKE · E / F EXIT · R RADIO · ESC PAUSE';
   hud.setHint(hints);
@@ -552,7 +534,7 @@ function exitVehicle() {
   car.velocityZ = 0;
   car.parked = true;
   currentVehicle = null;
-  cameraYaw = car.heading;
+  rig.yaw = car.heading;
   hud.setPlaying(true, false);
   hud.showPrompt(null);
 }
@@ -572,7 +554,7 @@ function promptForPlayer() {
 // ---------------------------------------------------------------------------
 const GAME_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyF', 'KeyR', 'KeyX', 'KeyH', 'KeyP',
-  'ShiftLeft', 'ShiftRight', 'Space', 'Escape', 'Tab',
+  'ShiftLeft', 'ShiftRight', 'Space', 'Escape', 'Tab', 'KeyM',
   'Digit1', 'Digit2', 'Digit3', 'Digit4',
   'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
 ]);
@@ -587,8 +569,15 @@ window.addEventListener('keydown', (event) => {
   pressedKeys.add(event.code);
   initAudioOnce();
 
+  if (event.code === 'KeyM' || event.code === 'Tab') {
+    if (isShot) return;
+    if (mode === 'playing') openCityMenu('map');
+    else if (mode === 'menu') closeCityMenu();
+    return;
+  }
   if (event.code === 'Escape') {
     if (isShot) return;
+    if (mode === 'menu') { closeCityMenu(); return; }
     if (mode === 'playing') pauseGame();
     else if (mode === 'paused') resumeGame();
     else if (!document.getElementById('controlsScreen').classList.contains('hidden')) {
@@ -658,11 +647,11 @@ window.addEventListener('mousemove', (event) => {
   const dx = event.movementX ?? 0;
   const dy = event.movementY ?? 0;
   if (currentVehicle) {
-    cameraOffsetYaw = clamp(cameraOffsetYaw - dx * 0.0026, -2.2, 2.2);
-    cameraPitch = clamp(cameraPitch + dy * 0.0016, -0.15, 0.55);
+    rig.offsetYaw = clamp(rig.offsetYaw - dx * 0.0026, -2.2, 2.2);
+    rig.pitch = clamp(rig.pitch + dy * 0.0016, -0.15, 0.55);
   } else {
-    cameraYaw -= dx * 0.0031;
-    cameraPitch = clamp(cameraPitch + dy * 0.0022, -0.34, 0.92);
+    rig.yaw -= dx * 0.0031;
+    rig.pitch = clamp(rig.pitch + dy * 0.0022, -0.34, 0.92);
   }
 });
 window.addEventListener('resize', () => renderer.resize());
@@ -670,85 +659,14 @@ window.addEventListener('resize', () => renderer.resize());
 // ---------------------------------------------------------------------------
 // Camera
 // ---------------------------------------------------------------------------
-function cameraForward(yaw) {
-  return [Math.sin(yaw), Math.cos(yaw)];
-}
-
 function updateCamera(dt) {
-  const p = combat.player;
-  if (mode === 'title' || mode === 'shot') {
-    return;
-  }
-  if (currentVehicle) {
-    const car = currentVehicle;
-    cameraOffsetYaw = lerp(cameraOffsetYaw, 0, clamp(dt * 1.4, 0, 1));
-    const baseYaw = car.heading + cameraOffsetYaw;
-    const speedRatio = clamp(Math.abs(car.speed) / car.spec.maxSpeed, 0, 1);
-    const dist = 7.0 + speedRatio * 2.2;
-    const height = 3.2 + Math.sin(cameraPitch * 2.2) * 2.4;
-    const desired = [
-      car.x - Math.sin(baseYaw) * dist,
-      car.y + height,
-      car.z - Math.cos(baseYaw) * dist,
-    ];
-    const target = [
-      car.x + Math.sin(car.heading) * (3.4 + speedRatio * 4),
-      car.y + 1.25,
-      car.z + Math.cos(car.heading) * (3.4 + speedRatio * 4),
-    ];
-    const smooth = clamp(dt * (7 + speedRatio * 4), 0, 1);
-    camera.pos[0] = lerp(camera.pos[0], desired[0], smooth);
-    camera.pos[1] = lerp(camera.pos[1], desired[1], smooth);
-    camera.pos[2] = lerp(camera.pos[2], desired[2], smooth);
-    camera.target[0] = lerp(camera.target[0], target[0], clamp(dt * 9, 0, 1));
-    camera.target[1] = lerp(camera.target[1], target[1], clamp(dt * 9, 0, 1));
-    camera.target[2] = lerp(camera.target[2], target[2], clamp(dt * 9, 0, 1));
-    const shake = speedRatio * 0.035 + (car.airborne ? 0.06 : 0) + (car.drift > 3 ? 0.03 : 0);
-    camera.pos[0] += Math.sin(elapsed * 31) * shake;
-    camera.pos[1] += Math.cos(elapsed * 27) * shake * 0.6;
-    camera.fov = 58 + speedRatio * 13 + (car.boosting ? 4 : 0);
-  } else {
-    const fwd = cameraForward(cameraYaw);
-    const horizontal = Math.cos(cameraPitch);
-    const dist = 5.2;
-    const desired = [
-      p.x - fwd[0] * dist * horizontal,
-      p.y + 2.2 + Math.sin(cameraPitch) * 4.2,
-      p.z - fwd[1] * dist * horizontal,
-    ];
-    // Keep the camera out of solid blocks.
-    let camX = desired[0], camZ = desired[2];
-    if (world.insideBuilding(camX, camZ)) {
-      const inner = world.collideCircle(camX, camZ, 0.6);
-      if (inner.hit) { camX = inner.x; camZ = inner.z; }
-    }
-    const smooth = clamp(dt * 9, 0, 1);
-    camera.pos[0] = lerp(camera.pos[0], camX, smooth);
-    camera.pos[1] = lerp(camera.pos[1], desired[1], smooth);
-    camera.pos[2] = lerp(camera.pos[2], camZ, smooth);
-    const target = [p.x + fwd[0] * 4, p.y + 1.42, p.z + fwd[1] * 4];
-    camera.target[0] = lerp(camera.target[0], target[0], clamp(dt * 11, 0, 1));
-    camera.target[1] = lerp(camera.target[1], target[1], clamp(dt * 11, 0, 1));
-    camera.target[2] = lerp(camera.target[2], target[2], clamp(dt * 11, 0, 1));
-    camera.fov = aimDown || mouseDown ? 50 : 62;
-    const bob = Math.hypot(p.velocityX, p.velocityZ) > 0.4 ? Math.sin(p.walkPhase * 2) * 0.035 : 0;
-    camera.pos[1] += bob;
-    cameraShake = lerp(cameraShake, 0, dt * 6);
-    camera.pos[0] += Math.sin(elapsed * 41) * cameraShake;
-    camera.pos[1] += Math.cos(elapsed * 37) * cameraShake * 0.7;
-  }
-  camera.up = [0, 1, 0];
+  if (mode === 'title' || mode === 'shot') return;
+  if (currentVehicle) rig.followCar(currentVehicle, dt, elapsed);
+  else rig.followOnFoot(combat.player, dt, elapsed, aimDown || mouseDown);
 }
 
 function titleCamera() {
-  const t = (performance.now() - titleCameraStart) / 1000;
-  camera.pos[0] = 118 + Math.sin(t * 0.06) * 34;
-  camera.pos[1] = 30 + Math.sin(t * 0.11) * 3;
-  camera.pos[2] = 404 + Math.cos(t * 0.05) * 16;
-  camera.target[0] = 4 + Math.sin(t * 0.04) * 16;
-  camera.target[1] = 8;
-  camera.target[2] = 150;
-  camera.fov = 57;
+  rig.titleOrbit((performance.now() - titleCameraStart) / 1000);
 }
 
 // ---------------------------------------------------------------------------
@@ -779,16 +697,18 @@ function updateGame(dt) {
     for (const ev of events) {
       if (ev === 'crash' || ev === 'crashHard') {
         if (audio.ready) audio.playCrash(ev === 'crashHard' ? 1.1 : 0.6);
-        cameraShake = 0.35;
+        rig.shake = 0.35;
       } else if (ev === 'stunt') {
         hud.notify('STUNT AIR · +$150', 'cash', 2200);
         p.cash += 150;
+        progression.count('stunts');
+        progression.addRespect(15);
         if (audio.ready) audio.playStunt();
       } else if (ev === 'splash') {
         if (audio.ready) audio.playSplash();
         hud.notify('Engine flooded — get out of the water', 'warn', 2600);
       } else if (ev === 'landing') {
-        cameraShake = 0.4;
+        rig.shake = 0.4;
       } else if (ev === 'wrecked') {
         if (audio.ready) audio.playExplosion();
         hud.notify('Vehicle destroyed', 'wanted', 2600);
@@ -810,7 +730,7 @@ function updateGame(dt) {
       exitVehicle();
       hud.notify('Vehicle destroyed', 'wanted', 2600);
     }
-    cameraOffsetYaw = lerp(cameraOffsetYaw, 0, clamp(dt * 0.6, 0, 1));
+    rig.offsetYaw = lerp(rig.offsetYaw, 0, clamp(dt * 0.6, 0, 1));
     // Run over pedestrians.
     if (Math.abs(car.speed) > 6) {
       for (const ped of traffic.pedestrians) {
@@ -827,10 +747,10 @@ function updateGame(dt) {
     }
   } else {
     // Camera look by keyboard.
-    if (keys.has('ArrowLeft')) cameraYaw += dt * 1.8;
-    if (keys.has('ArrowRight')) cameraYaw -= dt * 1.8;
-    if (keys.has('ArrowUp')) cameraPitch = clamp(cameraPitch - dt * 0.7, -0.34, 0.92);
-    if (keys.has('ArrowDown')) cameraPitch = clamp(cameraPitch + dt * 0.7, -0.34, 0.92);
+    if (keys.has('ArrowLeft')) rig.yaw += dt * 1.8;
+    if (keys.has('ArrowRight')) rig.yaw -= dt * 1.8;
+    if (keys.has('ArrowUp')) rig.pitch = clamp(rig.pitch - dt * 0.7, -0.34, 0.92);
+    if (keys.has('ArrowDown')) rig.pitch = clamp(rig.pitch + dt * 0.7, -0.34, 0.92);
   }
 
   const input = {
@@ -849,7 +769,7 @@ function updateGame(dt) {
   for (let i = 1; i <= 4; i += 1) {
     if (pressedKeys.has(`Digit${i}`)) input.switchWeapon = i;
   }
-  combat.update(dt, input, cameraYaw, { aim: input.aim });
+  combat.update(dt, input, rig.yaw, { aim: input.aim });
   pressedKeys.clear();
 
   police.update(dt, combat.player, currentVehicle);
@@ -891,6 +811,13 @@ function updateGame(dt) {
   }
 
   missions.update(dt);
+  activities.update(dt);
+  // Rolling slowly into the Safehouse Garage stores the car in the collection.
+  if (currentVehicle && !currentVehicle.storedChecked && Math.abs(currentVehicle.speed) < 4
+    && Math.hypot(currentVehicle.x - SAFEHOUSE.x, currentVehicle.z - (SAFEHOUSE.z + 12)) < 9) {
+    currentVehicle.storedChecked = true;
+    progression.storeVehicle(currentVehicle);
+  }
 
   if (combat.player.dead && !deathHandled) {
     deathHandled = true;
@@ -932,7 +859,11 @@ function updateGame(dt) {
     missionStep: missions.stepIndex,
     missionTotal: missions.mission?.steps.length,
     missionProgress: missions.progress,
-    waypoint: missions.waypoint(),
+    waypoint: activities.waypoint() ?? missions.waypoint(),
+    checkpoints: activities.checkpoints,
+    activity: activities.hudInfo(),
+    activityStarts: activities.active ? [] : activities.ACTIVITIES,
+    helicopter: police.helicopter,
     tokens: tokens.filter((t) => t.taken).length,
     city: cityProgress(),
     envName: env.name,
@@ -944,147 +875,15 @@ function updateGame(dt) {
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
-function buildScene(time) {
-  const b = new MeshBuilder(60000);
-  const glows = [];
-  const shadows = [];
-  const p = combat.player;
-  const camX = camera.pos[0], camZ = camera.pos[2];
-
-  // A halo faces the camera; a `flat` one ({sx, sz, rot}) is a light pool on the ground.
-  const addGlow = (x, y, z, color, r, alpha, flat = null) => {
-    if (flat) glows.push({ x, y, z, color, r, alpha, flat: true, sx: flat.sx ?? 1, sz: flat.sz ?? 1, rot: flat.rot ?? 0 });
-    else glows.push({ x, y, z, color, r, alpha });
-  };
-
-  // Static neon halos.
-  const nightBoost = 0.34 + getEnv().night * 0.66;
-  for (const g of world.glows) {
-    const dx = g.x - camX, dz = g.z - camZ;
-    if (dx * dx + dz * dz > 420 * 420) continue;
-    addGlow(g.x, g.y, g.z, g.color, g.r, g.alpha * nightBoost);
-  }
-
-  // Vehicles (deduplicated).
-  const seen = new Set();
-  const vehicles = allVehicles();
-  for (const car of vehicles) {
-    if (seen.has(car)) continue;
-    seen.add(car);
-    const dx = car.x - camX, dz = car.z - camZ;
-    if (dx * dx + dz * dz > 330 * 330) continue;
-    buildVehicle(b, car, time, { lod: dx * dx + dz * dz > 75 * 75 ? 1 : 0 });
-    vehicleGlow(car, time, addGlow);
-    const groundY = world.groundHeight(car.x, car.z);
-    shadows.push({ x: car.x, z: car.z, y: groundY + 0.03, rx: car.spec.width * 0.62, rz: car.spec.length * 0.6, alpha: 0.55, rot: car.heading });
-    shadows.push({ x: car.x, z: car.z, y: groundY + 0.032, rx: car.spec.width * 0.42, rz: car.spec.length * 0.42, alpha: 0.35, rot: car.heading });
-    if (car.health < 30 && car.health > 0) {
-      addGlow(car.x, car.y + 1.2, car.z, rgb(0x2f2a25), 1.8, 0.2);
-    }
-  }
-
-  // Pedestrians and characters.
-  for (const ped of traffic.pedestrians) {
-    const dx = ped.x - camX, dz = ped.z - camZ;
-    if (dx * dx + dz * dz > 190 * 190) continue;
-    buildCharacter(b, {
-      x: ped.x,
-      z: ped.z,
-      y: world.groundHeight(ped.x, ped.z),
-      heading: ped.heading,
-      phase: ped.phase,
-      speed: ped.panic > 0 ? 4.2 : ped.speedNow,
-      colors: ped.colors,
-      style: ped.style,
-      panic: ped.panic > 0,
-      longHair: ped.longHair,
-      aiming: false,
-      lod: dx * dx + dz * dz > 50 * 50 ? 1 : 0,
-    }, time);
-    shadows.push({ x: ped.x, z: ped.z, y: world.groundHeight(ped.x, ped.z) + 0.025, rx: 0.55, rz: 0.55, alpha: 0.25 });
-  }
-
-  // Player + enemies + tracers/particles.
-  combat.build(b, { aim: !currentVehicle && (aimDown || mouseDown || isShot) });
-  if (!currentVehicle && !p.dead) {
-    shadows.push({ x: p.x, z: p.z, y: (p.y ?? 0) + 0.03, rx: 0.6, rz: 0.6, alpha: 0.3 });
-  }
-  combat.glow(time, addGlow);
-
-  // Mission crates.
-  for (const crate of missions.crates) {
-    if (crate.taken) continue;
-    const bobY = 0.55 + Math.sin(time * 2.2 + crate.phase) * 0.12;
-    const gold = rgb(0xffc24b);
-    b.box(crate.x, bobY, crate.z, 1.0, 0.9, 1.0, rgb(0x7a4d21), { rotY: 0.4, omitBottom: true, e: 0.1 });
-    b.box(crate.x, bobY + 0.46, crate.z, 1.04, 0.08, 1.04, gold, { rotY: 0.4, omitBottom: true, e: 1 });
-    for (const side of [-1, 1]) {
-      b.box(crate.x + side * 0.5, bobY, crate.z, 0.06, 0.86, 1.0, gold, { rotY: 0.4, e: 0.7, omitBottom: true });
-    }
-    addGlow(crate.x, bobY + 0.5, crate.z, gold, 1.6, 0.5);
-    shadows.push({ x: crate.x, z: crate.z, rx: 0.8, rz: 0.8, alpha: 0.2 });
-  }
-
-  // Sun tokens.
-  for (const token of tokens) {
-    if (token.taken) continue;
-    const bob = 1.5 + Math.sin(time * 2.6 + token.phase) * 0.22;
-    b.cylinder(token.x, bob - 0.06, token.z, 0.42, 0.42, 0.12, 8, PALETTE.gold, { e: 1, capTop: true, capBottom: true });
-    b.box(token.x, bob, token.z, 0.18, 0.5, 0.18, rgb(0xfff0b0), { e: 1, rotY: time * 0.6, omitBottom: true });
-    addGlow(token.x, bob + 0.2, token.z, PALETTE.gold, 1.8, 0.6);
-  }
-
-  // Pickups.
-  for (const pickup of pickups) {
-    if (pickup.taken) continue;
-    const y = 0.8 + Math.sin(time * 2 + pickup.x) * 0.08;
-    const color = pickup.type === 'health' ? rgb(0x63ffa1) : rgb(0x5fe1ff);
-    b.box(pickup.x, y, pickup.z, 0.62, 0.62, 0.62, rgb(0x101a22), { rotY: time * 0.7, omitBottom: true, e: 0.1 });
-    b.box(pickup.x, y, pickup.z - 0.33, 0.42, 0.12, 0.04, color, { e: 1 });
-    b.box(pickup.x, y, pickup.z - 0.33, 0.12, 0.42, 0.04, color, { e: 1 });
-    addGlow(pickup.x, y, pickup.z, color, 1.4, 0.45);
-  }
-
-  // Mission waypoint: beam, rotating marker, ground ring.
-  const wp = missions.active ? missions.waypoint() : null;
-  if (wp) {
-    // A soft light column, a spinning faceted gem and a glowing ground ring.
-    const gold = PALETTE.gold;
-    const gy = world.groundHeight(wp.x, wp.z);
-    const spin = time * 1.7;
-    glows.push({ beam: true, x: wp.x, y: gy + 26, z: wp.z, x2: wp.x, y2: gy + 0.2, z2: wp.z, r: 0.5, r2: 0.9, color: gold, alpha: 0.55 });
-    const ring = [], radii = [];
-    for (let i = 0; i <= 40; i += 1) {
-      const a = (i / 40) * TAU;
-      ring.push([wp.x + Math.cos(a) * 2.5, gy + 0.18, wp.z + Math.sin(a) * 2.5]);
-      radii.push(0.09);
-    }
-    b.tube(ring, radii, 5, gold, { e: 1 });
-    const gemY = gy + 3.4 + Math.sin(time * 2.4) * 0.25;
-    b.ellipsoid(wp.x, gemY, wp.z, 0.55, 0.85, 0.55, gold, { yaw: spin, segments: 4, rings: 2, e: 1 });
-    addGlow(wp.x, gemY, wp.z, gold, 2.6, 0.7);
-    addGlow(wp.x, gy + 0.2, wp.z, gold, 3.4, 0.4, { sx: 1, sz: 1 });
-  }
-
-  // Safehouse marker when free roaming.
-  if (!missions.active && !isShot) {
-    const x = SAFEHOUSE.x, z = SAFEHOUSE.z + 12;
-    addGlow(x, 3, z, PALETTE.neonCyan, 2.4, 0.3);
-  }
-
-  // Police air unit and its volumetric searchlight cone.
-  const heli = police.helicopter;
-  if (heli) {
-    const addBeam = (from, to, r0, r1, color, alpha) => glows.push({ beam: true, x: from[0], y: from[1], z: from[2], x2: to[0], y2: to[1], z2: to[2], r: r0, r2: r1, color, alpha });
-    buildHelicopter(b, heli, time, addGlow, addBeam);
-  }
-
-  return { geometry: b.geometry(), glows, shadows };
-}
-
 function renderFrame(dt) {
   const env = getEnv();
-  const scene = buildScene(elapsed);
+  const scene = buildDynamicScene({
+    time: elapsed, camera, env, world, traffic, combat, missions, activities, police, tokens, pickups,
+    vehicles: allVehicles(),
+    playerVehicle: currentVehicle,
+    aiming: aimDown || mouseDown || isShot,
+    showSafehouse: !missions.active && !isShot,
+  });
   renderer.renderFrame({
     camera,
     env,
@@ -1098,421 +897,19 @@ function renderFrame(dt) {
 }
 
 // ---------------------------------------------------------------------------
-// Shot staging — deterministic frames for screenshots
+// Photo mode: ?shot=<name> stages a moment of play for the screenshots
 // ---------------------------------------------------------------------------
-function setStageHour(hour) {
-  game.hour = hour;
-}
-
-function clearScene() {
-  for (const car of traffic.cars) car.removed = true;
-  traffic.cars.length = 0;
-  police.clear();
-  combat.clearEnemies();
-  combat.tracers.length = 0;
-  combat.particles.length = 0;
-  combat.player.dead = false;
-  combat.player.inVehicle = null;
-  currentVehicle = null;
-}
-
-function stageCar(type, x, z, heading, speed = 0, options = {}) {
-  const car = createVehicle(type, x, z, heading, options);
-  car.y = world.groundHeight(x, z) + 0.02;
-  car.speed = speed;
-  car.parked = true;
-  car.staged = true;
-  if (options.color) car.color = options.color;
-  parkedVehicles.push(car);
-  return car;
-}
-
-function stageShot(name) {
-  hud.showLoadingDone();
-  hud.showTitle(name === 'title');
-  hud.setPlaying(name !== 'title', name === 'cover' || name === 'chase');
-  stageCity = null;
-  document.getElementById('coverBrand').classList.add('hidden');
-  if (name === 'title') {
-    setStageHour(18.55);
-    stageTitle();
-  } else if (name === 'start') {
-    stageStart();
-  } else if (name === 'cover') {
-    stageCover();
-  } else if (name === 'chase') {
-    stageChase();
-  } else if (name === 'combat') {
-    stageCombat();
-  } else if (name === 'beach') {
-    stageBeach();
-  } else if (name === 'night') {
-    stageNight();
-  } else {
-    stageTitle();
-    hud.showTitle(true);
-    hud.setPlaying(false, false);
-  }
-  mode = 'shot';
-}
-
-function stageTitle() {
-  clearScene();
-  setStageHour(18.5);
-  missions.reset();
-  missions.state.done = [true, true, false, false, false];
-  missions.state.active = false;
-  combinePlayerOnFoot(-40, 285, 0.6);
-  stageCar('coupe', 118, 254, -Math.PI / 2);
-  stageCar('muscle', 214, 267, Math.PI / 2);
-  stageCar('supercar', 330, 251, -Math.PI / 2);
-  stageCar('van', -160, 254, -Math.PI / 2);
-  stageCar('sedan', 58, 267, Math.PI / 2);
-  for (const [x, z, h] of [[-20, 291, 1.2], [30, 293, 2.7], [96, 290, 0.4], [160, 294, 3.3], [-100, 288, 1.9], [-166, 325, 0.8], [120, 310, 2.2]]) {
-    traffic.addStagedPed(x, z, h, 'civ');
-  }
-  hud.setTitle({
-    progress: 2, cash: 18450, tokens: 5, peak: 3, hasSave: true,
-    saveLabel: 'MISSION 03 · $18,450', storyComplete: false,
-  });
-  camera.pos = [132, 31, 402];
-  camera.target = [0, 7, 152];
-  camera.fov = 57;
-}
-
-function combinePlayerOnFoot(x, z, heading) {
-  const p = combat.player;
-  p.x = x; p.z = z;
-  p.y = world.groundHeight(x, z);
-  p.heading = heading;
-  p.aimYaw = heading;
-  p.inVehicle = null;
-  p.dead = false;
-  p.health = 100;
-  p.armor = 0;
-  currentVehicle = null;
-}
-
-function stageCover() {
-  clearScene();
-  setStageHour(18.92);
-  // Mission state: Neon Heist getaway, three stars.
-  missions.stage(2, 2, { banner: 'ACTIVE MISSION', done: 2 });
-  hud.missionBanner(missions.mission, 'ACTIVE MISSION', 120000);
-  const p = combat.player;
-  p.cash = 23850;
-  p.health = 88;
-  p.armor = 45;
-  p.weapons = ['fists', 'pistol', 'smg', 'shotgun'];
-  p.weaponSlot = 3;
-  p.ammo.smg.mag = 27;
-  p.ammo.smg.reserve = 180;
-  p.respect = 340;
-  p.dead = false;
-
-  const car = stageCar('supercar', 158, 254, -Math.PI / 2, 29);
-  car.boost = 0.72;
-  car.drift = 2.2;
-  car.colors = undefined;
-  car.color = rgb(0xff2f86);
-  car.heading = -Math.PI / 2;
-  currentVehicle = car;
-  p.inVehicle = car;
-  p.x = car.x;
-  p.z = car.z;
-  p.y = car.y;
-  p.heading = car.heading;
-
-  police.setWanted(3);
-  police.spawnStagedCruiser(187, 239, -Math.PI / 2 + 0.2);
-  police.spawnStagedCruiser(121, 268, Math.PI / 2);
-  police.spawnStagedCruiser(96, 243, -Math.PI / 2 + 0.05);
-  police.spawnStagedCruiser(228, 262, -Math.PI / 2);
-  police.setPeak(3);
-
-  stageCar('coupe', 34, 254, -Math.PI / 2, 0);
-  stageCar('sedan', 276, 265, Math.PI / 2, 0);
-  stageCar('taxi', -40, 253, -Math.PI / 2, 0);
-  stageCar('muscle', 206, 250, -Math.PI / 2, 0);
-  for (const [x, z, h, p2] of [[176, 291, 1.7, false], [136, 293, 2.5, false], [110, 290, 0.6, false], [246, 292, 3.1, false], [60, 288, 1.2, false]]) {
-    traffic.addStagedPed(x, z, h, 'civ', { panic: p2 ? 3 : 0 });
-  }
-  hud.dialogue('ELENA', 'Three stars and the marina lockup is still open. Lose them on the Strip, Mateo.', 120000);
-  camera.pos = [216, 5.4, 276];
-  camera.target = [144, 1.1, 251];
-  camera.fov = 68;
-}
-
-function stageCombat() {
-  clearScene();
-  setStageHour(19.42);
-  stageCity = { districts: 5, tokens: 9, safehouse: true, missions: 4 };
-  // Mission 04, Coral Pier: on foot, gold waypoint on the gang, neon wheel behind.
-  missions.stage(3, 1, { banner: 'ACTIVE MISSION', done: 3 });
-  hud.els.banner.classList.remove('show');
-  const p = combat.player;
-  combinePlayerOnFoot(-164.4, 368, 0.02);
-  p.health = 74;
-  p.armor = 45;
-  p.cash = 36480;
-  p.weapons = ['fists', 'pistol', 'smg', 'shotgun'];
-  p.weaponSlot = 3;
-  p.ammo.smg.mag = 21;
-  p.ammo.smg.reserve = 180;
-  p.moving = true;
-  p.walkPhase = 1.1;
-  p.aimYaw = -0.06;
-  p.respect = 520;
-  cameraYaw = 0;
-  cameraPitch = 0.1;
-
-  // The gang dug in behind crates and drums on the pier, the wheel lit up behind them.
-  combat.spawnEnemy(-166, 380, { health: 80, style: 'goon', weapon: 'pistol' });
-  combat.spawnEnemy(-159.2, 383.2, { health: 80, style: 'goon', weapon: 'smg', stationary: true });
-  combat.spawnEnemy(-163.2, 400.6, { health: 80, style: 'goon', weapon: 'pistol', stationary: true });
-  const enemyA = combat.enemies[0];
-  const enemyB = combat.enemies[1];
-  const enemyC = combat.enemies[2];
-  if (enemyA) { enemyA.heading = Math.PI + 0.1; enemyA.phase = 1.4; enemyA.hitFlash = 0.2; }
-  if (enemyB) { enemyB.heading = Math.PI + 0.35; enemyB.phase = 0.4; }
-  if (enemyC) { enemyC.heading = Math.PI - 0.3; enemyC.phase = 2.2; enemyC.hitFlash = 0.1; }
-  const deck = 1.1;
-  // A frozen frame of the exchange: muzzle flash, tracers, sparks and shell casings.
-  combat.tracers.push({ x1: -164.4, y1: deck + 1.48, z1: 368.7, x2: -165.9, y2: deck + 1.4, z2: 379.6, color: rgb(0xffd27a), life: 999, maxLife: 999 });
-  combat.tracers.push({ x1: -164.3, y1: deck + 1.46, z1: 368.8, x2: -159.4, y2: deck + 1.38, z2: 382.8, color: rgb(0xffb44a), life: 999, maxLife: 999 });
-  combat.tracers.push({ x1: -163.3, y1: deck + 1.45, z1: 400.1, x2: -164.9, y2: deck + 1.4, z2: 369.4, color: rgb(0xff5a3c), life: 999, maxLife: 999 });
-  for (let i = 0; i < 7; i += 1) {
-    combat.particles.push({ x: -165.9, y: deck + 1.4, z: 379.6, vx: (random() - 0.5) * 3, vy: random() * 2, vz: (random() - 0.5) * 3, life: 999, maxLife: 999, color: rgb(0xa81f2a), size: 0.5, gravity: 0 });
-  }
-  for (let i = 0; i < 5; i += 1) {
-    combat.particles.push({ x: -164.3 + (random() - 0.5) * 0.4, y: deck + 1.5, z: 368.9, vx: 0, vy: 0, vz: 0, life: 999, maxLife: 999, color: rgb(0xffcf6a), size: 0.24, gravity: 0 });
-  }
-  combat.addImpact(-165.9, deck + 1.4, 379.5, PALETTE.gold, 999);
-  combat.addImpact(-161.4, deck + 1.2, 376.6, rgb(0xffe08a), 999);
-  traffic.addStagedPed(-170.5, 366, -1.2, 'civ', { panic: 3, panicArms: true });
-  traffic.addStagedPed(-158.4, 372, 0.4, 'civ', { panic: 2, panicArms: true });
-  police.setWanted(1);
-  hud.dialogue('MATEO', 'Coral Pier, under the wheel. They took the codes — take them back.', 120000);
-  camera.pos = [-162.6, 3.7, 363.4];
-  camera.target = [-165.2, 4.6, 392];
-  camera.fov = 62;
-}
-
-function stageBeach() {
-  clearScene();
-  setStageHour(11.9);
-  missions.stage(0, 1, { banner: 'ACTIVE MISSION' });
-  hud.missionBanner(missions.mission, 'ACTIVE MISSION', 120000);
-  const p = combat.player;
-  combinePlayerOnFoot(-57, 284, -0.6);
-  p.health = 100;
-  p.armor = 20;
-  p.cash = 18450;
-  p.weapons = ['fists', 'pistol', 'smg', 'shotgun'];
-  p.weaponSlot = 2;
-  p.aimYaw = -0.6;
-  p.respect = 210;
-  const car = stageCar('coupe', -68, 286.5, Math.PI / 2);
-  car.color = rgb(0xff5a3c);
-  car.accent = rgb(0xffb26a);
-  car.mission = true;
-  const c2 = stageCar('muscle', -24, 255, Math.PI / 2);
-  c2.color = rgb(0x1f9e8f);
-  stageCar('taxi', -112, 266, -Math.PI / 2);
-  stageCar('sedan', 30, 254, Math.PI / 2);
-  stageCar('van', 112, 266, -Math.PI / 2);
-  for (const [x, z, h] of [[-44, 291, 2.2], [-30, 296, 1.1], [-78, 291, 0.4], [-96, 294, 2.9], [8, 288, 1.6], [-120, 312, 0.8], [-140, 320, 2.4]]) {
-    traffic.addStagedPed(x, z, h, 'civ');
-  }
-  hud.dialogue('ELENA', 'Coupe is right there on the boardwalk. Keys are in the visor. Make it look casual.', 120000);
-  camera.pos = [-31, 3.9, 325];
-  camera.target = [-64, 1.2, 286];
-  camera.fov = 63;
-}
-
-// ---------------------------------------------------------------------------
-// Screenshot staging — one deterministic scene per hero frame
-// ---------------------------------------------------------------------------
-
-/** The cover: a golden-hour hero frame over the Palm Strip with the live HUD. */
-function stageStart() {
-  clearScene();
-  setStageHour(19.3);
-  stageCity = { districts: 4, tokens: 5, safehouse: true, missions: 2 };
-  missions.stage(0, 2, { banner: 'ACTIVE MISSION', done: 1 });
-  hud.els.banner.classList.remove('show');
-  const p = combat.player;
-  p.cash = 23850;
-  p.health = 96;
-  p.armor = 40;
-  p.weapons = ['fists', 'pistol', 'smg', 'shotgun'];
-  p.weaponSlot = 3;
-  p.ammo.smg.mag = 27;
-  p.respect = 340;
-
-  // The hero car, nose west down the boulevard into the sun.
-  const hero = stageCar('supercar', 26, 270, -Math.PI / 2, 24);
-  hero.boost = 0.62;
-  hero.boosting = true;
-  hero.drift = 1.6;
-  hero.color = rgb(0xff2f86);
-  hero.accent = rgb(0x39e9ff);
-  currentVehicle = hero;
-  p.inVehicle = hero;
-  p.x = hero.x; p.z = hero.z; p.y = hero.y;
-  p.heading = hero.heading;
-
-  // A living boulevard: traffic both ways, parked cars, boardwalk strollers.
-  stageCar('coupe', 104, 252, -Math.PI / 2, 22);
-  stageCar('muscle', -44, 253.5, -Math.PI / 2, 18);
-  stageCar('taxi', 74, 266, Math.PI / 2, 13);
-  stageCar('sedan', -12, 267.5, Math.PI / 2, 11);
-  stageCar('van', -110, 266, Math.PI / 2, 9);
-  stageCar('sedan', 150, 267, Math.PI / 2, 12);
-  stageCar('supercar', -176, 251, -Math.PI / 2, 25);
-  // Parked cars along the promenade and hotel kerb.
-  stageCar('coupe', -96, 283, Math.PI / 2, 0);
-  stageCar('muscle', 60, 282, -Math.PI / 2, 0);
-  for (const [x, z, h] of [
-    [-30, 291, 1.2], [26, 293, 2.7], [-84, 290, 0.4], [104, 292, 3.3],
-    [-130, 288, 1.9], [150, 289, 2.4], [-205, 291, 1.1], [62, 294, 0.6],
-    [-60, 238, 1.5], [16, 237, 3.0], [118, 239, 0.2], [-152, 240, 2.2],
-    [-6, 312, 1.6], [86, 316, 2.9], [-142, 318, 0.9],
-  ]) {
-    traffic.addStagedPed(x, z, h, 'civ');
-  }
-  hud.dialogue('ELENA', 'Boulevard is ours tonight. Keep the coupe clean and the cops bored.', 120000);
-  // Chase-cam framing: the car low and centred, the sun and the wheel ahead, Deco hotels on the right.
-  camera.pos = [35.5, 2.7, 267.2];
-  camera.target = [12, 1.5, 272.5];
-  camera.fov = 60;
-  document.getElementById('coverBrand').classList.remove('hidden');
-  hud.els.missionCard.classList.add('hidden');
-}
-
-/** Twilight pursuit: cruisers at the player's door, helicopter above, stars lit. */
-function stageChase() {
-  clearScene();
-  setStageHour(19.14);
-  stageCity = { districts: 4, tokens: 7, safehouse: true, missions: 3 };
-  missions.stage(2, 2, { banner: 'ACTIVE MISSION', done: 2 });
-  hud.els.banner.classList.remove('show');
-  const p = combat.player;
-  p.cash = 41280;
-  p.health = 74;
-  p.armor = 30;
-  p.weapons = ['fists', 'pistol', 'smg', 'shotgun'];
-  p.weaponSlot = 3;
-  p.ammo.smg.mag = 19;
-  p.respect = 620;
-
-  const hero = stageCar('supercar', 128, 251.4, -Math.PI / 2 + 0.1, 41);
-  hero.boost = 0.42;
-  hero.boosting = true;
-  hero.drift = 3.8;
-  hero.steer = -0.6;
-  hero.color = rgb(0xff2f86);
-  hero.accent = rgb(0x39e9ff);
-  currentVehicle = hero;
-  p.inVehicle = hero;
-  p.x = hero.x; p.z = hero.z; p.y = hero.y;
-  p.heading = hero.heading;
-
-  police.setWanted(4);
-  police.setPeak(4);
-  // Two interceptors on the bumper, one swerving in from the oncoming lanes.
-  const c1 = police.spawnStagedCruiser(134.5, 246.6, -Math.PI / 2 - 0.08);
-  const c2 = police.spawnStagedCruiser(136.5, 256.8, -Math.PI / 2 + 0.1);
-  const c3 = police.spawnStagedCruiser(106, 256.5, Math.PI / 2 + 0.55);
-  const c4 = police.spawnStagedCruiser(68, 250, Math.PI / 2);
-  [c1, c2, c3, c4].forEach((c, i) => { c.sirenOn = true; c.remote = true; c.sirenPhase = i * 0.37; c.speed = 38; });
-  c3.braking = true;
-
-  // Roadblock ahead: two cruisers in a V across the westbound lanes, officers on foot.
-  const r1 = police.spawnStagedCruiser(86, 247.5, Math.PI / 2 - 0.62, { roadblock: true });
-  const r2 = police.spawnStagedCruiser(84, 255, Math.PI / 2 + 0.62, { roadblock: true });
-  [r1, r2].forEach((c, i) => { c.sirenOn = true; c.braking = true; c.remote = true; c.sirenPhase = 0.6 + i * 0.3; });
-  traffic.addStagedPed(90.5, 244.6, Math.PI / 2, 'cop');
-  traffic.addStagedPed(89.5, 258.5, Math.PI / 2, 'cop');
-  // The air unit hovering over the boulevard, its searchlight pinning the supercar.
-  police.stageHelicopter({ x: 103, z: 249, y: 14.5, heading: Math.PI / 2 + 0.35, spotX: 126.5, spotZ: 251.2 });
-
-  stageCar('coupe', 60, 254, -Math.PI / 2, 18);
-  stageCar('taxi', 112, 268, Math.PI / 2, 0);
-  stageCar('van', 196, 268, Math.PI / 2, 0);
-  stageCar('sedan', 70, 266, Math.PI / 2, 0);
-  // Tyre smoke and sparks boiling off the rear wheels of the drifting hero car.
-  for (let i = 0; i < 12; i += 1) {
-    combat.particles.push({
-      x: 128 + 2.4 + random() * 2.6, y: 0.35 + random() * 0.6, z: 251.4 + (random() - 0.5) * 2.4,
-      vx: 0, vy: 0, vz: 0, life: 520, maxLife: 999, color: rgb(0x9a928c), size: 0.8 + random() * 0.8, gravity: 0, smoke: true,
-    });
-  }
-  for (let i = 0; i < 5; i += 1) {
-    combat.particles.push({
-      x: 128 + 1.8, y: 0.3, z: 251.4 + (random() - 0.5) * 2.0, vx: 0, vy: 0, vz: 0,
-      life: 800, maxLife: 999, color: i % 2 ? rgb(0xffa53c) : rgb(0xff5a2a), size: 0.5, gravity: 0,
-    });
-  }
-  for (const [x, z, h] of [[150, 291, 1.7], [122, 293, 2.5], [112, 238, 0.6], [96, 239, 3.1], [64, 288, 1.2], [104, 237, 2.2]]) {
-    traffic.addStagedPed(x, z, h, 'civ', { panic: 3, panicArms: true });
-  }
-  hud.dialogue('MATEO', 'Four stars on the Strip. Marina lockup stays open if you drive like that.', 120000);
-  camera.pos = [149, 4.2, 253.2];
-  camera.target = [112, 3.1, 250.2];
-  camera.fov = 60;
-}
-
-/** Midnight vista down Neon Midtown and the Palm Strip: skyline, bay wheel, wet road. */
-function stageNight() {
-  clearScene();
-  setStageHour(22.34);
-  stageCity = { districts: 5, tokens: 10, safehouse: true, missions: 4 };
-  missions.stage(2, 2, { banner: 'ACTIVE MISSION', done: 3 });
-  hud.els.banner.classList.remove('show');
-  const p = combat.player;
-  p.cash = 91250;
-  p.health = 100;
-  p.armor = 70;
-  p.weapons = ['fists', 'pistol', 'smg', 'shotgun'];
-  p.weaponSlot = 3;
-  p.ammo.smg.mag = 24;
-  p.respect = 980;
-
-  // Hero supercar cruising west under the neon, headlights washing the asphalt.
-  const hero = stageCar('supercar', 302, 251.5, -Math.PI / 2, 34);
-  hero.boost = 0.8;
-  hero.boosting = true;
-  hero.drift = 2.4;
-  hero.color = rgb(0x27e2d2);
-  hero.accent = rgb(0xff3f95);
-  currentVehicle = hero;
-  p.inVehicle = hero;
-  p.x = hero.x; p.z = hero.z; p.y = hero.y;
-  p.heading = hero.heading;
-
-  // Live traffic in both directions, lights on, plus promenade strollers.
-  stageCar('taxi', 244, 266, Math.PI / 2, 12);
-  stageCar('sedan', 196, 267.5, Math.PI / 2, 10);
-  stageCar('coupe', 180, 252.5, -Math.PI / 2, 21);
-  stageCar('muscle', 132, 253, -Math.PI / 2, 18);
-  stageCar('van', 96, 266.5, Math.PI / 2, 8);
-  stageCar('supercar', 58, 251, -Math.PI / 2, 26);
-  stageCar('coupe', 24, 283, Math.PI / 2, 0);
-  stageCar('taxi', 158, 283.5, -Math.PI / 2, 0);
-  for (const [x, z, h] of [
-    [300, 291, 1.4], [262, 293, 2.8], [222, 290, 0.6], [184, 292, 3.2],
-    [140, 289, 1.9], [96, 294, 2.5], [46, 290, 0.2], [312, 238, 2.1],
-    [250, 237.5, 0.8], [170, 239, 2.9], [110, 238, 1.3],
-  ]) {
-    traffic.addStagedPed(x, z, h, 'civ');
-  }
-  hud.dialogue('ELENA', 'Midnight on the Strip. Every window lit, the wheel turning, the whole city open.', 120000);
-  // Wide midnight vista: skyline right, lit Ferris wheel over the bay to the left.
-  camera.pos = [311, 2.6, 255.5];
-  camera.target = [283, 2.2, 249.5];
-  camera.fov = 64;
-}
+const shotStage = createShotStage({
+  world, traffic, police, combat, missions, activities, progression, hud, camera, game, parkedVehicles, random,
+  setVehicle: (car) => {
+    currentVehicle = car;
+    combat.player.inVehicle = car;
+    if (car) { combat.player.x = car.x; combat.player.z = car.z; combat.player.y = car.y; combat.player.heading = car.heading; }
+  },
+  setCameraAngles: (yaw, pitch) => { rig.yaw = yaw; rig.pitch = pitch; },
+  setStageCity: (city) => { stageCity = city; },
+  openMenu: (tab) => openCityMenu(tab),
+});
 
 // ---------------------------------------------------------------------------
 // Main loop
@@ -1527,13 +924,10 @@ function frame(now) {
   elapsed += dt;
 
   if (isShot) {
-    if (shotName === 'cover') stageCoverFrame();
+    shotStage.frame(elapsed, shotName);
     renderer.resize();
-    if (shotName === 'combat') {
-      const pulse = 0.9 + Math.sin(elapsed * 2) * 0.05;
-      combat.particles.forEach((pt) => { pt.size = 0.5 * pulse; });
-    }
     syncShotHud();
+    if (cityMenu.open) cityMenu.render(liveMapState());
     renderFrame(dt);
     shotReadyFrames += 1;
     if (shotReadyFrames > 4 && !window.__shotReady) window.__shotReady = true;
@@ -1562,57 +956,48 @@ function frame(now) {
     accumulator = 0;
     updateCamera(dt);
     hud.setPlaying(true, !!currentVehicle);
+    if (mode === 'menu' && (menuRedraw += 1) % 6 === 1) cityMenu.render(liveMapState());
   }
   renderer.resize();
   renderFrame(dt);
   if (!moduleReady) { moduleReady = true; hud.showLoadingDone(); }
 }
 
-function stageCoverFrame() {
-  // Keep the hero frame exact and alive: subtle camera drift and siren pulse only.
-  camera.pos[1] = 5.4 + Math.sin(elapsed * 0.7) * 0.06;
-  camera.target[1] = 1.1 + Math.sin(elapsed * 0.6) * 0.04;
-}
-
+/** Photo mode feeds the HUD the same state a live frame would. */
 function syncShotHud() {
   const p = combat.player;
-  // The cover carries its own wordmark instead of the mission card.
-  const mission = shotName === 'start' ? null : (missions.active ? missions.mission : null);
+  const mission = missions.active ? missions.mission : null;
+  const near = currentVehicle ? null : findVehicleNear(p.x, p.z, 6);
+  const live = liveMapState();
   hud.update({
-    player: p,
-    vehicle: currentVehicle,
+    ...live,
     weapon: combat.currentWeapon(),
     ammo: combat.currentAmmo(),
     wanted: police.wanted,
     evasion: false,
-    policeCars: police.allCars(),
-    trafficCars: traffic.cars,
-    parkedCars: parkedVehicles,
     district: world.districtName(p.x, p.z),
     clock: clockAt(game.hour),
     timeName: timeNameAt(game.hour),
     radio: audio.currentStation()?.name ?? 'SUNSET FM 96.6',
-    prompt: currentVehicle ? null : (findVehicleNear(p.x, p.z, 6) ? `Steal ${findVehicleNear(p.x, p.z, 6).spec.name}` : null),
+    prompt: near && !near.police ? `Steal ${near.spec.name}` : null,
     aiming: true,
     mission,
     objectiveText: mission ? missions.objectiveText() : '',
     missionStep: missions.stepIndex,
     missionTotal: mission?.steps.length,
     missionProgress: mission ? missions.progress : 0,
-    waypoint: missions.waypoint(),
+    activity: activities.hudInfo(),
     tokens: tokens.filter((t) => t.taken).length,
     city: cityProgress(),
   });
-  if (shotName === 'beach' || shotName === 'combat' || shotName === 'chase' || shotName === 'night') hud.setPlaying(true, false);
-  if (shotName === 'chase') hud.setPlaying(true, true);
-  if (shotName === 'title') hud.setPlaying(false, false);
+  hud.setPlaying(shotName !== 'title', !!currentVehicle);
 }
 
 // capture staged shot before first frame
 window.addEventListener('load', () => { renderer.resize(); });
 
 if (isShot) {
-  stageShot(shotName);
+  shotStage.stage(shotName);
   hud.setRadio('SUNSET FM 96.6');
   refreshTitle();
   requestAnimationFrame(frame);
@@ -1640,8 +1025,19 @@ window.__solaris = {
       district: world.districtName(combat.player.x, combat.player.z),
       renders: renderer.stats(),
       tokens: tokens.filter((t) => t.taken).length,
+      respect: combat.player.respect,
+      rank: progression.rank.name,
+      upgrades: { ...progression.state.upgrades },
+      stored: progression.state.stored.slice(),
+      activity: activities.active?.id ?? null,
+      activityStep: activities.state.index,
+      menuOpen: cityMenu.open,
+      helicopter: !!police.helicopter,
+      police: police.allCars().length,
     };
   },
+  openMenu(tab = 'map') { openCityMenu(tab); },
+  closeMenu() { closeCityMenu(); },
   start() { newGame(true); },
   continue() { continueGame(); },
   enterNearest() { const car = findVehicleNear(combat.player.x, combat.player.z, 8); if (car) enterVehicle(car); },
@@ -1675,7 +1071,7 @@ window.__solaris = {
     car.y = world.groundHeight(x, z) + 0.02;
     combat.player.x = x; combat.player.z = z; combat.player.heading = heading;
   },
-  stage(name) { stageShot(name); },
+  stage(name) { shotStage.stage(name); },
   hideHud(hidden) { hud.els.hud.classList.toggle('hidden', !!hidden); },
   project(x, y, z) {
     const { width, height } = renderer.stats();

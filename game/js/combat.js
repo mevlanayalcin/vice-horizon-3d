@@ -613,7 +613,7 @@ export function createCombat(world, bus) {
         bus.onEnemyShot?.(enemy);
         if (hit) {
           if (player.inVehicle) {
-            player.inVehicle.health = Math.max(0, player.inVehicle.health - enemy.damage * 0.7);
+            player.inVehicle.health = Math.max(0, player.inVehicle.health - enemy.damage * 0.7 * (player.inVehicle.damageScale ?? 1));
             bus.onCarHurt?.(enemy.damage);
           } else {
             hurtPlayer(enemy.damage, enemy);

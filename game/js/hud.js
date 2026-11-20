@@ -1,9 +1,12 @@
-// hud.js — the whole overlay: circular live minimap pre-rendered once and panned,
-// wanted stars, cash, health/armour, weapon rail with hand-drawn SVG icons, mission
-// card and banner, dialogue, notifications, speedometer/nitro, prompts and every
-// menu (title, controls manual, pause/save, story complete). DOM + one 2D canvas.
+// hud.js — the whole overlay in four dark-glass corner clusters: the vector minimap
+// and vitals (bottom-left), heat stars, cash, respect rank and weapon rail with
+// hand-drawn SVG icons (top-right), district, radio and speedometer (bottom-right), the
+// mission card and activity timer (top-centre), plus dialogue, toasts, prompts and the
+// title, manual, pause/save and story-complete screens. DOM + the minimap canvas.
 
-import { WEAPONS, kmh, rgb } from './config.js';
+import { kmh } from './config.js';
+import { createMapPainter } from './minimap.js';
+import { rankFor } from './progression.js';
 
 const STAR_COUNT = 5;
 
@@ -97,9 +100,16 @@ export function createHud({ onAction, world }) {
     popupReward: byId('popupReward'),
     popupNext: byId('popupNext'),
     status: byId('statusLine'),
+    rankName: byId('rankName'),
+    rankFill: byId('rankFill'),
+    respect: byId('respectValue'),
+    activityChip: byId('activityChip'),
+    activityCode: byId('activityCode'),
+    activityName: byId('activityName'),
+    activityCp: byId('activityCp'),
+    activityTimer: byId('activityTimer'),
   };
-  const ctx = els.minimap.getContext('2d');
-  const map = buildStaticMap(world);
+  const painter = createMapPainter(world);
   let bannerTimeout = 0;
   let dialogueTimeout = 0;
   let popupTimeout = 0;
@@ -108,74 +118,6 @@ export function createHud({ onAction, world }) {
   let lastStars = -1;
   let lastDistrict = '';
   let lastClock = '';
-
-  // ------------------------------------------------------------- static map
-  function buildStaticMap(worldData) {
-    const minX = -540, maxX = 810, minZ = -560, maxZ = 500;
-    const scale = 1.25;
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.ceil((maxX - minX) * scale);
-    canvas.height = Math.ceil((maxZ - minZ) * scale);
-    const g = canvas.getContext('2d');
-    const px = (x) => (x - minX) * scale;
-    const py = (z) => (z - minZ) * scale;
-    const rect = (x, z, w, d, fill) => {
-      g.fillStyle = fill;
-      g.fillRect(px(x - w / 2), py(z - d / 2), w * scale, d * scale);
-    };
-    g.fillStyle = '#13323d';
-    g.fillRect(0, 0, canvas.width, canvas.height);
-    // Ocean sparkle bands.
-    g.fillStyle = 'rgba(80, 190, 200, 0.06)';
-    for (let i = 0; i < 22; i += 1) {
-      g.fillRect(0, i * 80 + 20, canvas.width, 2);
-    }
-    // Land mass, island, beach, pier.
-    rect(40, -84, 960, 772, '#202d35');
-    rect(654, 185, 212, 230, '#202d35');
-    rect(25, 319, 990, 34, '#8a7752');
-    rect(-166, 374, 20, 144, '#5c4830');
-    // Districts as very subtle bands.
-    const tint = { '#ffb257': 'rgba(255,178,87,0.10)', '#c56cff': 'rgba(197,108,255,0.10)', '#57d8d0': 'rgba(87,216,208,0.08)', '#5cc8ff': 'rgba(92,200,255,0.09)', '#9ee06a': 'rgba(158,224,106,0.07)' };
-    rect(0, 242, 900, 40, tint['#ffb257']);
-    rect(-10, -60, 420, 300, tint['#c56cff']);
-    rect(-350, -210, 230, 320, tint['#57d8d0']);
-    rect(345, 200, 330, 190, tint['#5cc8ff']);
-    // Roads.
-    for (const r of worldData.roads) {
-      const w = Math.max(1.2, r.w * scale * 0.62);
-      g.strokeStyle = r.main ? '#a7b5b8' : '#7b8b90';
-      g.lineWidth = w;
-      g.lineCap = 'square';
-      g.beginPath();
-      g.moveTo(px(r.x1), py(r.z1));
-      g.lineTo(px(r.x2), py(r.z2));
-      g.stroke();
-    }
-    // Boulevard highlight.
-    g.strokeStyle = '#c6b795';
-    g.lineWidth = 32 * scale * 0.16;
-    g.beginPath(); g.moveTo(px(-438), py(260)); g.lineTo(px(518), py(260)); g.stroke();
-    // Buildings.
-    for (const b of worldData.buildings) {
-      if (!b || b.invisible) continue;
-      const tall = b.h > 30;
-      g.fillStyle = tall ? '#405a66' : '#2d3f48';
-      g.fillRect(px(b.x - b.w / 2), py(b.z - b.d / 2), Math.max(2, b.w * scale * 0.9), Math.max(2, b.d * scale * 0.9));
-      if (b.h > 60) {
-        g.fillStyle = 'rgba(255, 194, 75, 0.45)';
-        g.fillRect(px(b.x) - 1, py(b.z) - 1, 2, 2);
-      }
-    }
-    // Coastline edge.
-    g.strokeStyle = 'rgba(120, 220, 225, 0.28)';
-    g.lineWidth = 2;
-    g.beginPath();
-    g.moveTo(px(-440), py(303));
-    g.lineTo(px(520), py(303));
-    g.stroke();
-    return { canvas, minX, maxX, minZ, maxZ, scale, px, py };
-  }
 
   // --------------------------------------------------------------- utilities
   function money(value) {
@@ -294,7 +236,7 @@ export function createHud({ onAction, world }) {
     if (!mission) return;
     setText(els.bannerKicker, kicker);
     setText(els.bannerTitle, mission.name);
-    setText(els.bannerSub, `${mission.giver ?? 'ELENA'} · ${mission.code ? `MISSION ${mission.code}` : ''}`);
+    setText(els.bannerSub, mission.steps ? `${mission.giver ?? 'ELENA'} · MISSION ${mission.code}` : `${mission.giver ?? 'SIDE ACTIVITY'} · ${mission.code ?? ''}`);
     els.banner.classList.add('show');
     clearTimeout(bannerTimeout);
     if (duration > 0) {
@@ -484,150 +426,28 @@ export function createHud({ onAction, world }) {
     // Prompt.
     setPrompt(prompt);
 
-    // City progression: districts explored, side jobs cleared, safehouse owned.
-    if (state.city && els.cityProgress) {
-      const city = state.city;
-      setText(els.cpDistricts, `${city.districts ?? 0} / 6 DISTRICTS`);
-      setText(els.cpJobs, `SIDE JOBS ${city.tokens ?? 0} / 12`);
-      setText(els.cpSafehouse, city.safehouse ? 'SAFEHOUSE OWNED' : 'SAFEHOUSE LOCKED');
-      els.cpSafehouse.classList.toggle('locked', !city.safehouse);
-      [...els.cpPips.children].forEach((pip, i) => pip.classList.toggle('on', i < (city.districts ?? 0)));
-      els.cityProgress.classList.remove('hidden');
+    // Respect rank under the cash counter.
+    const rank = rankFor(player.respect ?? 0);
+    setText(els.rankName, rank.name.toUpperCase());
+    setText(els.respect, `${money(player.respect ?? 0)} RP`);
+    els.rankFill.style.width = `${Math.round(rank.progress * 100)}%`;
+
+    // Side-activity timer under the mission card.
+    const act = state.activity;
+    els.activityChip.classList.toggle('hidden', !act);
+    if (act) {
+      setText(els.activityCode, act.code);
+      setText(els.activityName, act.name.toUpperCase());
+      setText(els.activityCp, `CP ${Math.min(act.total, act.step + 1)} / ${act.total}`);
+      const t = Math.max(0, act.timer);
+      setText(els.activityTimer, `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`);
     }
 
-    drawMinimap({
-      player, vehicle, wanted, evasion, policeCars, trafficCars, parkedCars, targetVehicle,
-      waypoint, mission, aiming, district,
+    painter.drawMinimap(els.minimap, {
+      player, vehicle, wanted, policeCars, trafficCars, parkedCars, waypoint,
+      helicopter: state.helicopter, activityStarts: state.activityStarts, checkpoints: state.checkpoints,
     });
-    void missionProgress; void tokens;
-  }
-
-  // ----------------------------------------------------------------- minimap
-  function drawMinimap(state) {
-    const size = els.minimap.width;
-    const half = size / 2;
-    const range = 195;
-    const scale = size / (range * 2);
-    const px = state.vehicle ? state.vehicle.x : state.player.x;
-    const pz = state.vehicle ? state.vehicle.z : state.player.z;
-    const heading = state.vehicle ? state.vehicle.heading : state.player.heading;
-    ctx.clearRect(0, 0, size, size);
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(half, half, half, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.fillStyle = '#102b35';
-    ctx.fillRect(0, 0, size, size);
-    const sx = (px - range - map.minX) * map.scale;
-    const sy = (pz - range - map.minZ) * map.scale;
-    const sw = range * 2 * map.scale;
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(map.canvas, sx, sy, sw, sw, 0, 0, size, size);
-    const toScreen = (x, z) => [half + (x - px) * scale, half + (z - pz) * scale];
-
-    // Traffic and parked cars.
-    ctx.fillStyle = 'rgba(233, 238, 235, 0.55)';
-    for (const car of state.trafficCars ?? []) {
-      const [x, y] = toScreen(car.x, car.z);
-      if (Math.hypot(x - half, y - half) > half - 9) continue;
-      ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
-    }
-    ctx.fillStyle = 'rgba(150, 170, 175, 0.6)';
-    for (const car of state.parkedCars ?? []) {
-      if (car === state.vehicle) continue;
-      const [x, y] = toScreen(car.x, car.z);
-      if (Math.hypot(x - half, y - half) > half - 9) continue;
-      ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
-    }
-
-    // Mission waypoint (gold diamond) and edge pin.
-    const wp = state.waypoint;
-    if (wp) {
-      let [wx, wy] = toScreen(wp.x, wp.z);
-      const dist = Math.hypot(wx - half, wy - half);
-      const limit = half - 18;
-      let pinned = false;
-      if (dist > limit) {
-        const t = limit / dist;
-        wx = half + (wx - half) * t;
-        wy = half + (wy - half) * t;
-        pinned = true;
-      }
-      const pulse = 0.6 + Math.sin(performance.now() * 0.004) * 0.28;
-      ctx.save();
-      ctx.translate(wx, wy);
-      if (pinned) {
-        ctx.rotate(Math.atan2(wy - half, wx - half) + Math.PI / 2);
-      }
-      ctx.fillStyle = '#ffc24b';
-      ctx.shadowColor = 'rgba(255, 194, 75, 0.9)';
-      ctx.shadowBlur = 14;
-      ctx.beginPath();
-      ctx.moveTo(0, -7);
-      ctx.lineTo(6, 0);
-      ctx.lineTo(0, 7);
-      ctx.lineTo(-6, 0);
-      ctx.closePath();
-      ctx.fill();
-      if (!pinned) {
-        ctx.strokeStyle = `rgba(255, 194, 75, ${pulse})`;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(0, 0, 13, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-
-    // Police blips.
-    const now = performance.now();
-    const flash = Math.floor(now / 220) % 2;
-    for (const car of state.policeCars ?? []) {
-      let [x, y] = toScreen(car.x, car.z);
-      const dist = Math.hypot(x - half, y - half);
-      if (dist > half - 12) {
-        const t = (half - 12) / dist;
-        x = half + (x - half) * t;
-        y = half + (y - half) * t;
-      }
-      ctx.save();
-      ctx.shadowColor = flash ? 'rgba(255, 55, 80, 0.9)' : 'rgba(70, 120, 255, 0.9)';
-      ctx.shadowBlur = 10;
-      ctx.fillStyle = flash ? '#ff4657' : '#4f82ff';
-      ctx.fillRect(x - 4, y - 4, 8, 8);
-      ctx.restore();
-    }
-
-    // Player arrow.
-    ctx.save();
-    ctx.translate(half, half);
-    ctx.rotate(Math.PI - heading);
-    ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.moveTo(0, -10);
-    ctx.lineTo(7, 8);
-    ctx.lineTo(0, 4);
-    ctx.lineTo(-7, 8);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = state.vehicle ? '#55ebff' : '#ffc24b';
-    ctx.beginPath();
-    ctx.moveTo(0, -5);
-    ctx.lineTo(3, 3);
-    ctx.lineTo(-3, 3);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-
-    // A subtle range ring.
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(half, half, half * 0.62, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
+    void missionProgress; void tokens; void evasion; void targetVehicle; void district; void mission;
   }
 
   // ------------------------------------------------------------------ events
@@ -665,5 +485,6 @@ export function createHud({ onAction, world }) {
     showLoadingDone,
     announce,
     money,
+    painter,
   };
 }

@@ -115,6 +115,8 @@ export function snapshot(game) {
     hour: game.hour,
     radio: game.audio.station,
     vehicleType: p.inVehicle ? p.inVehicle.type : null,
+    progression: game.progression?.snapshot(),
+    activities: game.activities?.snapshot(),
   };
 }
 
@@ -159,5 +161,7 @@ export function applySnapshot(game, data) {
   if (data.weapons?.includes('smg')) game.combat.giveWeapon('smg');
   if (data.weapons?.includes('shotgun')) game.combat.giveWeapon('shotgun');
   if (Number.isFinite(data.radio)) game.audio.setRadio(data.radio);
+  game.progression?.restore(data.progression);
+  game.activities?.restore(data.activities);
   return true;
 }

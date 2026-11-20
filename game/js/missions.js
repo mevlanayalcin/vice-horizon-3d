@@ -12,8 +12,8 @@ export const MISSIONS = [
     dialogue: 'The coupe is on the boardwalk, keys under the visor. Deliver it to the Midtown lockup and we eat this week.',
     reward: 1400,
     steps: [
-      { type: 'goto', pos: [-124, 286], radius: 7, label: 'Get to the marked Vice Coupe on the Palm Strip boardwalk' },
-      { type: 'steal', pos: [-124, 286], radius: 9, carPos: [-124, 286], label: 'Steal the Vice Coupe  ·  E / F' },
+      { type: 'goto', pos: [-124, 286], radius: 7, label: 'Get to the marked Marisol Coupe on the Palm Strip boardwalk' },
+      { type: 'steal', pos: [-124, 286], radius: 9, carPos: [-124, 286], label: 'Steal the Marisol Coupe  ·  E / F' },
       { type: 'deliver', pos: [76, 2], radius: 9, label: 'Deliver the coupe to the Neon Midtown lockup' },
     ],
   },
@@ -43,7 +43,7 @@ export const MISSIONS = [
         type: 'kill', pos: [65, -18], radius: 28, label: 'Take down the vault security', count: 6,
         spawn: [[38, -30], [92, -32], [36, -96], [94, -98], [50, -8], [82, -8]], health: 85, raise: 1,
       },
-      { type: 'escape', label: 'Escape the 3-star response' },
+      { type: 'escape', label: 'Lose the police · break their line of sight' },
       { type: 'goto', pos: [642, 196], radius: 13, label: 'Reach the Marina Causeway hideout' },
     ],
   },
@@ -283,8 +283,8 @@ export function createMissions({ world, combat, police, bus }) {
     } else if (s.type === 'steal') {
       const car = s.car ?? bus.findVehicleNear?.(s.pos[0], s.pos[1], 12);
       if (car && p.inVehicle === car) {
-        police.raise(2, 'Grand theft auto');
-        bus.notify?.('Grand theft auto · 2 stars', 'wanted');
+        police.raise(2, 'Car theft');
+        bus.notify?.('Car theft · 2 stars', 'wanted');
         bus.dialogue?.('ELENA', 'That\'s the one. Now move before the Strip wakes up.');
         car.mission = true;
         advance();

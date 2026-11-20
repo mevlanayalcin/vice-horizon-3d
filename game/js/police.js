@@ -251,7 +251,7 @@ export function createPolice(world, combat, bus) {
         if (impact > 9 && time - (car.lastRam ?? -10) > 0.7) {
           car.lastRam = time;
           car.health -= impact * 0.25;
-          playerVehicle.health = Math.max(0, playerVehicle.health - impact * 0.42);
+          playerVehicle.health = Math.max(0, playerVehicle.health - impact * 0.42 * (playerVehicle.damageScale ?? 1));
           bus.onCrash?.(car, 'ram');
         }
       }

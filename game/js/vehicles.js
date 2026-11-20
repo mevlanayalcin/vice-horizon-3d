@@ -95,7 +95,7 @@ export function updateVehicle(v, controls, dt, world, options = {}) {
   // Boost: extra push while held, recharging when not.
   const boosting = !!controls.boost && v.boost > 0.02 && Math.abs(v.speed) > 2;
   v.boosting = boosting;
-  if (boosting) v.boost = Math.max(0, v.boost - dt * 0.32);
+  if (boosting) v.boost = Math.max(0, v.boost - dt * 0.32 * (v.nitroRate ?? 1));
   else v.boost = Math.min(1, v.boost + dt * 0.09);
 
   // Decompose velocity into forward / lateral and apply grip to the latter.
@@ -149,7 +149,7 @@ export function updateVehicle(v, controls, dt, world, options = {}) {
       v.airborne = false;
       v.pitch = 0;
       if (impact > 7) {
-        v.health -= impact * 1.4;
+        v.health -= impact * 1.4 * (v.damageScale ?? 1);
         events.push('landing');
       }
       events.push('landed');
@@ -182,7 +182,7 @@ export function updateVehicle(v, controls, dt, world, options = {}) {
       v.velocityZ -= hit.nz * along * 1.4;
       const damage = Math.min(34, Math.abs(along) * 1.9);
       if (damage > 3) {
-        v.health = Math.max(0, v.health - damage);
+        v.health = Math.max(0, v.health - damage * (v.damageScale ?? 1));
         v.speed *= 0.5;
         events.push(damage > 12 ? 'crashHard' : 'crash');
         v.lastCrash = v.age;

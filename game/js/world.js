@@ -9,6 +9,7 @@ import {
   CITY, DISTRICTS, PALETTE, SAFEHOUSE, createRandom, rgb, shade, mix3,
 } from './config.js';
 import { MeshBuilder } from './meshkit.js';
+import { HOTEL_NAMES, SHOP_NAMES, addNeonColumn, addNeonText, measureNeonText } from './signage.js';
 
 const V = (x, y, z) => [x, y, z];
 
@@ -24,6 +25,8 @@ export function createWorld(renderer) {
   const pickups = [];
   const props = [];
   const landmarks = [];
+  let hotelCount = 0;
+  let shopCount = 0;
 
   function builder(key) {
     let b = batches.get(key);
@@ -290,11 +293,11 @@ export function createWorld(renderer) {
     addBeachBar(118, 311);
     addVolleyball(-250, 320);
     // Elaborate hotel face along the boulevard's north side.
-    addArtDecoHotel(-186, 221, 40, 19, rgb(0xf2b9a0), PALETTE.neonPink);
-    addArtDecoHotel(-74, 224, 32, 24, rgb(0xf4d8b0), PALETTE.neonCyan);
-    addArtDecoHotel(38, 219, 36, 16, rgb(0xa8d8c8), PALETTE.neonAmber);
-    addArtDecoHotel(168, 223, 44, 22, rgb(0xf6c8d2), PALETTE.neonMagenta);
-    addArtDecoHotel(292, 220, 30, 14, rgb(0xe9e2c9), PALETTE.neonPink);
+    addArtDecoHotel(-186, 221, 40, 19, rgb(0xf2b9a0), PALETTE.neonPink, 'THE PALOMA');
+    addArtDecoHotel(-74, 224, 32, 24, rgb(0xf4d8b0), PALETTE.neonCyan, 'HOTEL MARISOL');
+    addArtDecoHotel(38, 219, 36, 16, rgb(0xa8d8c8), PALETTE.neonAmber, 'SOL CLUB');
+    addArtDecoHotel(168, 223, 44, 22, rgb(0xf6c8d2), PALETTE.neonMagenta, 'CORAL PLAZA');
+    addArtDecoHotel(292, 220, 30, 14, rgb(0xe9e2c9), PALETTE.neonPink, 'AZUR GRAND');
     addPalmRow(-420, 440, 287, 22, 1.15);
     addBillboard(-300, 286, 0, 'SUNSET');
     addBillboard(140, 286, 0, 'NEON');
@@ -569,8 +572,11 @@ export function createWorld(renderer) {
   function addShopFront(x, z, width, faceZ, color) {
     const b = builder('props');
     const y = 4.15;
-    b.box(x, y, z + faceZ * 0.55, width, 0.5, 0.18, color, { e: 1, omitBottom: true });
-    b.box(x, y + 0.62, z + faceZ * 0.55, width * 0.72, 0.22, 0.12, shade(color, 0.55), { e: 0.9, omitBottom: true });
+    const shopName = SHOP_NAMES[shopCount++ % SHOP_NAMES.length];
+    const nameH = Math.min(1.05, (width * 0.7) / (measureNeonText(shopName, 1) || 1));
+    b.box(x, y + 0.35, z + faceZ * 0.55, width, nameH + 0.6, 0.18, shade(color, 0.16), { e: 0.03, omitBottom: true });
+    b.box(x, y - 0.05, z + faceZ * 0.62, width, 0.12, 0.12, color, { e: 1, omitBottom: true });
+    addNeonText(b, shopName, { x, y: y + 0.35 - nameH / 2, z: z + faceZ * 0.68, height: nameH, normal: [0, faceZ], color, weight: 0.13 });
     // Striped awning: alternating warm slats under the sign, a Strip signature.
     for (let i = 0; i < 6; i += 1) {
       const ax = x - width * 0.42 + (i + 0.5) * (width * 0.84 / 6);
@@ -601,8 +607,9 @@ export function createWorld(renderer) {
     glow(x, y + 5, z - 0.5, color, width * 0.35, 0.55);
   }
 
-  function addArtDecoHotel(x, z, width, height, color, neon) {
+  function addArtDecoHotel(x, z, width, height, color, neon, name = null) {
     const b = builder('palm');
+    const title = name ?? HOTEL_NAMES[hotelCount++ % HOTEL_NAMES.length];
     const d = 22;
     b.box(x, height / 2, z, width, height, d, color, { omitBottom: true, top: shade(color, 0.9) });
     // White horizontal fins, the Strip's pastel Art Deco signature.
@@ -624,16 +631,18 @@ export function createWorld(renderer) {
     }
     // Wide roof marquee with readable abstract lettering, aimed at the Strip.
     const signY = height + 8.6;
-    b.box(x, signY, z + d * 0.32, width * 0.74, 3.8, 0.42, shade(neon, 0.34), { e: 0.1, omitBottom: true });
-    for (let i = 0; i < 7; i += 1) {
-      const sx = x - width * 0.31 + i * width * 0.103;
-      b.box(sx, signY, z + d * 0.32 + 0.28, 0.42, 1.9 + (i % 3) * 0.35, 0.18, neon, { e: 1, omitBottom: true });
-    }
-    glow(x, signY + 0.4, z + d * 0.4, neon, width * 0.3, 0.75);
+    const capH = Math.min(2.6, (width * 0.7) / (measureNeonText(title, 1) || 1));
+    const boardW = measureNeonText(title, capH) + 1.6;
+    b.box(x, signY, z + d * 0.32, boardW, capH + 1.5, 0.42, shade(neon, 0.18), { e: 0.04, omitBottom: true });
+    for (const side of [-1, 1]) b.box(x + side * boardW * 0.32, signY - capH, z + d * 0.32, 0.28, capH + 1, 0.28, PALETTE.concreteDark, { omitBottom: true });
+    addNeonText(b, title, { x, y: signY - capH / 2, z: z + d * 0.32 + 0.24, height: capH, normal: [0, 1], color: neon, glow, glowAlpha: 0.5 });
     // Vertical blade sign on the corners.
     b.box(x + width / 2 - 2, height * 0.55, z + d / 2 + 1, 0.35, height * 0.6, 3.2, shade(neon, 0.44), { e: 0.12, omitBottom: true });
-    for (let i = 0; i < 5; i += 1) {
-      b.box(x + width / 2 - 1.8, height * 0.4 + i * 2.2, z + d / 2 + 1.1, 0.2, 1.2, 2.4, neon, { e: 1, omitBottom: true });
+    // The blade carries the hotel's short name, stacked letter by letter, on both faces.
+    const bladeWord = title.replace(/^(HOTEL|THE|LA|CASA DEL) /, '').split(' ')[0].slice(0, 7);
+    const letterH = Math.min(1.7, (height * 0.56) / (bladeWord.length * 1.25));
+    for (const side of [-1, 1]) {
+      addNeonColumn(b, bladeWord, { x: x + width / 2 - 2 + side * 0.24, yTop: height * 0.84, z: z + d / 2 + 1 - letterH * 0.33, height: letterH, gap: letterH * 0.25, normal: [side, 0], color: neon, glow: side > 0 ? glow : null });
     }
     // Neon corner edge on the other side so the silhouette glows from any angle.
     b.box(x - width / 2 - 0.15, height * 0.52, z + d / 2 - 1.2, 0.24, height * 0.82, 0.24, neon, { e: 0.9, omitBottom: true });
@@ -1034,21 +1043,24 @@ export function createWorld(renderer) {
     const W = 13, H = 7;
     b.box(x, y + 2, z, W, H, 0.5, shade(PALETTE.neonMagenta, 0.24), { rotY: rot, omitBottom: true });
     if (name === 'SUNSET') {
-      for (let i = 0; i < 6; i += 1) {
-        b.box(x, y + 0.2 + i * 0.9, z - 0.32, 9 - i * 1.2, 0.28, 0.12, i % 2 ? PALETTE.neonPink : PALETTE.neonAmber, { rotY: rot, e: 1, omitBottom: true });
+      for (let i = 0; i < 4; i += 1) {
+        b.box(x, y - 0.6 + i * 0.85, z - 0.32, 9 - i * 1.2, 0.28, 0.12, i % 2 ? PALETTE.neonPink : PALETTE.neonAmber, { rotY: rot, e: 1, omitBottom: true });
       }
-      b.sphere(x, y + 3.1, z - 0.32, 1.8, PALETTE.sunset, { segments: 10, rings: 6, e: 1 });
+      b.sphere(x, y + 2.1, z - 0.32, 1.5, PALETTE.sunset, { segments: 10, rings: 6, e: 1 });
     } else if (name === 'NEON') {
       for (let i = 0; i < 5; i += 1) {
-        b.box(x - 3.4 + i * 1.7, y + 1.4, z - 0.32, 0.8, 4.4, 0.14, i % 2 ? PALETTE.neonCyan : PALETTE.neonPink, { rotY: rot, e: 1, omitBottom: true });
+        b.box(x - 3.4 + i * 1.7, y + 1.0, z - 0.32, 0.8, 3.6, 0.14, i % 2 ? PALETTE.neonCyan : PALETTE.neonPink, { rotY: rot, e: 1, omitBottom: true });
       }
-      b.box(x, y + 4.4, z - 0.3, 9, 0.2, 0.12, PALETTE.neonCyan, { rotY: rot, e: 1, omitBottom: true });
+      b.box(x, y + 3.5, z - 0.3, 9, 0.2, 0.12, PALETTE.neonCyan, { rotY: rot, e: 1, omitBottom: true });
     } else {
       for (let i = 0; i < 3; i += 1) {
-        b.box(x - 3 + i * 3, y + 3.6, z - 0.32, 2.5, 0.7, 0.14, PALETTE.neonAmber, { rotY: rot, e: 1, omitBottom: true });
+        b.box(x - 3 + i * 3, y + 3.0, z - 0.32, 2.5, 0.7, 0.14, PALETTE.neonAmber, { rotY: rot, e: 1, omitBottom: true });
       }
       b.box(x, y + 0.6, z - 0.32, 10, 1.2, 0.14, rgb(0x2b8f86), { rotY: rot, e: 0.3, omitBottom: true });
     }
+    const slogan = { SUNSET: 'SUNSET FM 96.6', NEON: 'NEON DRIVE', PALMS: 'SOLARIS BAY' }[name] ?? name;
+    const capH = Math.min(1.25, (W * 0.84) / (measureNeonText(slogan, 1) || 1));
+    addNeonText(b, slogan, { x, y: y + 4.6, z: z - 0.42, height: capH, normal: [0, -1], color: PALETTE.white, emit: 0.95, weight: 0.13 });
     glow(x, y + 2.4, z - 0.6, name === 'NEON' ? PALETTE.neonPink : PALETTE.neonCyan, 7, 0.6);
   }
 
@@ -1306,13 +1318,36 @@ export function createWorld(renderer) {
     landmarks.push({ name: 'Marina Causeway', x: 640, z: 200 });
   }
 
+  /** A sleek motor yacht: raked white hull, two stepped decks with dark glass bands. */
   function addYacht(x, z, rot) {
     const b = builder('marina');
-    b.box(x, 0.2, z, 3.6, 1.6, 13, PALETTE.white, { rotY: rot, omitBottom: true });
-    b.box(x, 1.2, z + 1, 3.0, 1.1, 6, rgb(0xe7e3d8), { rotY: rot, omitBottom: true });
-    b.box(x, 1.9, z + 2, 2.4, 0.5, 3, PALETTE.glass, { rotY: rot, omitBottom: true });
-    b.box(x, 2.5, z + 1.5, 0.2, 2.2, 0.2, PALETTE.white, { omitBottom: true });
-    glow(x, 2.6, z + 1.5, PALETTE.headlight, 2, 0.3);
+    const c = Math.cos(rot), s = Math.sin(rot);
+    const at = (lx, lz) => [x + lx * c + lz * s, z - lx * s + lz * c];
+    const deckBox = (lz, y, w, h, l, color, opts = {}) => {
+      const [px, pz] = at(0, lz);
+      b.box(px, y, pz, w, h, l, color, { rotY: -rot, omitBottom: true, ...opts });
+    };
+    const hullPts = [[0, 8.2], [1.5, 4.5], [2.0, 0], [1.95, -5.6], [-1.95, -5.6], [-2.0, 0], [-1.5, 4.5]];
+    const y0 = CITY.oceanY - 0.2, y1 = CITY.oceanY + 1.7;
+    for (let i = 0; i < hullPts.length; i += 1) {
+      const a = hullPts[i], q = hullPts[(i + 1) % hullPts.length];
+      const [ax, az] = at(a[0] * 0.85, a[1] * 0.9), [bx, bz] = at(q[0] * 0.85, q[1] * 0.9);
+      const [cx, cz] = at(q[0], q[1]), [dx, dz] = at(a[0], a[1]);
+      b.quad([ax, y0, az], [bx, y0, bz], [cx, y1, cz], [dx, y1, dz], PALETTE.white, { s: -0.6 });
+    }
+    for (let i = 1; i < hullPts.length - 1; i += 1) {
+      const [ax, az] = at(...hullPts[0]), [bx, bz] = at(...hullPts[i]), [cx, cz] = at(...hullPts[i + 1]);
+      b.tri([ax, y1, az], [bx, y1, bz], [cx, y1, cz], rgb(0xc9a77a), { n: [0, 1, 0] });
+    }
+    deckBox(-1.2, y1 + 0.7, 3.4, 1.4, 7.6, PALETTE.white, { s: -0.5 });
+    deckBox(-1.0, y1 + 0.75, 3.46, 0.55, 7.0, PALETTE.glass, { s: -1 });
+    deckBox(-1.8, y1 + 1.85, 2.7, 0.9, 4.6, rgb(0xf3f0ea), { s: -0.5 });
+    deckBox(-1.6, y1 + 1.9, 2.76, 0.36, 4.0, PALETTE.glass, { s: -1 });
+    deckBox(-2.2, y1 + 2.6, 0.18, 1.6, 0.18, PALETTE.white);
+    const [gx, gz] = at(0, -2.2);
+    glow(gx, y1 + 3.5, gz, PALETTE.headlight, 1.6, 0.45);
+    const [hx, hz] = at(0, -1.0);
+    glow(hx, y1 + 0.8, hz, PALETTE.neonCyan, 3.2, 0.25);
   }
 
   function buildLandmarks() {
@@ -1326,7 +1361,7 @@ export function createWorld(renderer) {
     b.cylinder(65, 132, -65, 3.2, 0.2, 16, 8, PALETTE.gold, { e: 1, capTop: true });
     glow(65, 148, -65, PALETTE.gold, 16, 0.75);
     // The Grand Palms hotel.
-    addArtDecoHotel(-118, 202, 46, 30, rgb(0xf7cdb0), PALETTE.neonPink);
+    addArtDecoHotel(-118, 202, 46, 30, rgb(0xf7cdb0), PALETTE.neonPink, 'MIRAMAR');
     // Safehouse garage.
     addSafehouse();
     // Hills backdrop: layered ridges behind the houses.
@@ -1418,6 +1453,44 @@ export function createWorld(renderer) {
     collider(x - w / 2, x + w / 2, z - d / 2, z + d / 2, 'ramp');
   }
 
+  /** A moored sailboat off the beach: tapered hull, cabin, mast, mainsail and jib. */
+  function addSailboat(x, z, rot, scale, sail) {
+    const b = builder('marina');
+    const y = CITY.oceanY + 0.15;
+    const c = Math.cos(rot), s = Math.sin(rot);
+    const P = (lx, ly, lz) => [x + (lx * c + lz * s) * scale, y + ly * scale, z + (-lx * s + lz * c) * scale];
+    const hull = PALETTE.white, deck = rgb(0xc9a77a);
+    const L = 5.2, W = 1.25;
+    const ring = [[0, L], [W * 0.75, L * 0.45], [W, -L * 0.25], [W * 0.8, -L * 0.62], [-W * 0.8, -L * 0.62], [-W, -L * 0.25], [-W * 0.75, L * 0.45]];
+    for (let i = 0; i < ring.length; i += 1) {
+      const a = ring[i], bq = ring[(i + 1) % ring.length];
+      b.quad(P(a[0] * 0.82, -0.25, a[1] * 0.92), P(bq[0] * 0.82, -0.25, bq[1] * 0.92), P(bq[0], 0.75, bq[1]), P(a[0], 0.75, a[1]), hull);
+    }
+    for (let i = 1; i < ring.length - 1; i += 1) b.tri(P(ring[0][0], 0.76, ring[0][1]), P(ring[i][0], 0.76, ring[i][1]), P(ring[i + 1][0], 0.76, ring[i + 1][1]), deck, { n: [0, 1, 0] });
+    b.box(...P(0, 1.15, -1.0), 1.5 * scale, 0.8 * scale, 2.4 * scale, PALETTE.white, { rotY: rot, omitBottom: true });
+    b.box(...P(0, 1.2, -0.2), 1.3 * scale, 0.32 * scale, 0.1 * scale, PALETTE.glass, { rotY: rot, omitBottom: true });
+    b.segment(P(0, 0.75, 0.6), P(0, 10.5, 0.6), 0.14 * scale, 0.14 * scale, rgb(0xe8e4dc));
+    b.segment(P(0, 1.9, 0.6), P(0, 1.9, -3.6), 0.1 * scale, 0.1 * scale, rgb(0xd8d2c6));
+    b.tri(P(0.02, 10.2, 0.6), P(0.02, 2.0, 0.6), P(0.02, 2.0, -3.5), sail, { n: [c, 0, -s] });
+    b.tri(P(-0.02, 10.2, 0.6), P(-0.02, 2.0, -3.5), P(-0.02, 2.0, 0.6), shade(sail, 0.9), { n: [-c, 0, s] });
+    b.tri(P(0, 9.6, 0.75), P(0, 1.2, 4.9), P(0, 1.2, 0.85), mix3(sail, PALETTE.white, 0.5));
+    glow(...P(0, 10.6, 0.6), PALETTE.policeRed, 0.9, 0.5);
+  }
+
+  function buildBayBoats() {
+    const sails = [PALETTE.white, rgb(0xffe2c4), rgb(0xff8f7a), rgb(0x7fe0d6), PALETTE.white, rgb(0xffd166)];
+    const spots = [
+      [-392, 372, 0.4, 1.0], [-318, 418, 2.2, 1.2], [-250, 366, 1.1, 0.9], [-96, 388, 2.8, 1.1],
+      [-40, 452, 0.9, 1.3], [12, 372, 1.8, 1.0], [74, 410, 0.2, 1.15], [138, 380, 2.5, 0.95],
+      [206, 446, 1.4, 1.25], [262, 372, 0.7, 1.0], [330, 404, 2.0, 1.1], [402, 378, 1.2, 0.9],
+      [452, 452, 2.6, 1.2], [-200, 470, 1.6, 1.35],
+    ];
+    spots.forEach(([x, z, r, sc], i) => addSailboat(x, z, r, sc, sails[i % sails.length]));
+    // Two motor yachts riding at anchor off the Strip.
+    addYacht(-20, 404, 1.3);
+    addYacht(300, 430, 2.1);
+  }
+
   // -------------------------------------------------------------------------
   // Assemble the city
   // -------------------------------------------------------------------------
@@ -1427,6 +1500,7 @@ export function createWorld(renderer) {
   buildPier();
   buildHarbor();
   buildMarina();
+  buildBayBoats();
   buildLandmarks();
 
   // Trees on the hills and extra greenery.

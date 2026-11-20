@@ -169,7 +169,7 @@ export const DAY_CYCLE = [
 
 export const VEHICLES = {
   coupe: {
-    id: 'coupe', name: 'Vice Coupe', price: 42000,
+    id: 'coupe', name: 'Marisol Coupe', price: 42000,
     length: 4.6, width: 1.98, height: 1.24, wheelBase: 2.75, wheelRadius: 0.38,
     maxSpeed: 54, accel: 15.5, brake: 28, grip: 7.2, steer: 1.55, mass: 1.1,
     colors: { body: rgb(0xff5a3c), accent: rgb(0xffb26a), glass: rgb(0x1a2a3a), rim: rgb(0xd8d5cf) },
