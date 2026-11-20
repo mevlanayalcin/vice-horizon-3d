@@ -2,6 +2,8 @@
 // two street races, a timed courier run, Sun Cab fares and the stunt-ramp hunt. Each
 // timed activity starts when the player rolls into its cyan start ring, runs a chain
 // of checkpoints against the clock and pays cash and respect; best times are saved.
+// Back-to-back clears build a streak multiplier (to x2), and every best time earns a
+// gold, silver or bronze medal against the activity's par.
 
 export const ACTIVITIES = [
   {
@@ -32,6 +34,24 @@ export const ACTIVITIES = [
 
 export const STUNT_GOAL = 8;
 
+/** Medal thresholds as a share of the par time; the best time decides the medal. */
+export const MEDALS = [
+  { id: 'gold', name: 'GOLD', share: 0.72 },
+  { id: 'silver', name: 'SILVER', share: 0.86 },
+  { id: 'bronze', name: 'BRONZE', share: 1 },
+];
+
+/** The medal a time earns against an activity's par, or null. */
+export function medalFor(def, time) {
+  if (!Number.isFinite(time)) return null;
+  return MEDALS.find((m) => time <= def.time * m.share) ?? null;
+}
+
+/** Back-to-back clears without a failure stack a cash multiplier: x1.25 per clear, to x2. */
+export function streakMultiplier(streak) {
+  return 1 + Math.min(4, Math.max(0, streak)) * 0.25;
+}
+
 export function createActivities({ combat, bus, progression }) {
   const state = {
     active: null,
@@ -42,6 +62,8 @@ export function createActivities({ combat, bus, progression }) {
     best: {},
     completed: {},
     cooldown: {},
+    streak: 0,
+    bestStreak: 0,
   };
 
   function reset() {
@@ -49,6 +71,8 @@ export function createActivities({ combat, bus, progression }) {
     state.best = {};
     state.completed = {};
     state.cooldown = {};
+    state.streak = 0;
+    state.bestStreak = 0;
   }
 
   function playerPosition() {
@@ -79,18 +103,28 @@ export function createActivities({ combat, bus, progression }) {
     state.active = null;
     state.cooldown[def.id] = 12;
     if (!success) {
+      if (state.streak > 1) bus.notify?.(`STREAK LOST · x${streakMultiplier(state.streak).toFixed(2)}`, 'warn', 2400);
+      state.streak = 0;
       bus.notify?.(`${def.name.toUpperCase()} FAILED`, 'warn', 2600);
       return;
     }
     const time = Math.round(state.elapsed * 10) / 10;
     const best = state.best[def.id];
-    if (!best || time < best) state.best[def.id] = time;
+    const personalBest = !best || time < best;
+    if (personalBest) state.best[def.id] = time;
     state.completed[def.id] = (state.completed[def.id] ?? 0) + 1;
+    const multiplier = streakMultiplier(state.streak);
+    state.streak += 1;
+    state.bestStreak = Math.max(state.bestStreak, state.streak);
     const bonus = Math.round(def.reward * Math.max(0, state.timer / def.time) * 0.5);
-    combat.player.cash += def.reward + bonus;
+    const pay = Math.round((def.reward + bonus) * multiplier);
+    combat.player.cash += pay;
     progression.count('activities');
-    progression.addRespect(def.respect, def.code);
-    bus.notify?.(`${def.name.toUpperCase()} · ${time}s · +$${(def.reward + bonus).toLocaleString('en-US')}`, 'cash', 3800);
+    progression.addRespect(Math.round(def.respect * multiplier), def.code);
+    const medal = medalFor(def, time);
+    bus.notify?.(`${def.name.toUpperCase()} · ${time}s · +$${pay.toLocaleString('en-US')}${multiplier > 1 ? ` · STREAK x${multiplier.toFixed(2)}` : ''}`, 'cash', 3800);
+    if (personalBest && best) bus.notify?.(`NEW PERSONAL BEST · ${time}s (was ${best}s)${medal ? ` · ${medal.name}` : ''}`, 'mission', 3600);
+    else if (medal) bus.notify?.(`${medal.name} MEDAL · ${def.name.toUpperCase()}`, 'mission', 3000);
     bus.activityComplete?.(def);
   }
 
@@ -136,7 +170,7 @@ export function createActivities({ combat, bus, progression }) {
   function hudInfo() {
     const def = state.active;
     if (!def) return null;
-    return { name: def.name, code: def.code, timer: Math.max(0, state.timer), step: state.index, total: def.route.length };
+    return { name: def.name, code: def.code, timer: Math.max(0, state.timer), step: state.index, total: def.route.length, streak: streakMultiplier(state.streak), best: state.best[def.id] ?? null };
   }
 
   function stage(id, index, timer) {
@@ -149,17 +183,20 @@ export function createActivities({ combat, bus, progression }) {
   }
 
   function snapshot() {
-    return { best: { ...state.best }, completed: { ...state.completed } };
+    return { best: { ...state.best }, completed: { ...state.completed }, streak: state.streak, bestStreak: state.bestStreak };
   }
 
   function restore(data) {
     if (!data) return;
     state.best = { ...(data.best ?? {}) };
     state.completed = { ...(data.completed ?? {}) };
+    state.streak = Math.max(0, Math.floor(Number(data.streak) || 0));
+    state.bestStreak = Math.max(state.streak, Math.floor(Number(data.bestStreak) || 0));
   }
 
   return {
     ACTIVITIES, state, reset, update, waypoint, hudInfo, stage, snapshot, restore,
+    get multiplier() { return streakMultiplier(state.streak); },
     get active() { return state.active; },
     get checkpoints() { return state.active ? state.active.route.slice(state.index) : []; },
   };

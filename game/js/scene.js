@@ -63,10 +63,11 @@ export function buildDynamicScene(ctx) {
       y: world.groundHeight(ped.x, ped.z),
       heading: ped.heading,
       phase: ped.phase,
-      speed: ped.panic > 0 ? 4.2 : ped.speedNow,
+      speed: ped.duck > 0 ? 0 : ped.panic > 0 ? 4.2 : ped.speedNow,
       colors: ped.colors,
       style: ped.style,
-      panic: ped.panic > 0,
+      panic: ped.panic > 0 || ped.panicArms,
+      duck: ped.duck > 0 ? Math.min(1, ped.duck * 3) : 0,
       longHair: ped.longHair,
       aiming: false,
       lod: dx * dx + dz * dz > 50 * 50 ? 1 : 0,
@@ -84,6 +85,37 @@ export function buildDynamicScene(ctx) {
   for (const puff of tyreSmoke) {
     const life = puff.life / puff.maxLife;
     addGlow(puff.x, puff.y, puff.z, rgb(0x9a928c), puff.size, life * 0.16);
+  }
+
+  // Street lamps, drawn live so a car can knock one flat: the pole pivots on its base
+  // toward `fallYaw` by `tilt`, and a felled lamp goes dark.
+  const lampDark = rgb(0x32343a);
+  for (const lamp of world.lampposts ?? []) {
+    const dx = lamp.x - camX, dz = lamp.z - camZ;
+    if (dx * dx + dz * dz > 420 * 420) continue;
+    const ax = Math.cos(lamp.rot), az = Math.sin(lamp.rot);
+    if (!lamp.knocked) {
+      b.box(lamp.x, 0.12, lamp.z, 0.42, 0.24, 0.42, shade(lampDark, 0.85), { omitBottom: true });
+      b.box(lamp.x, 2.7, lamp.z, 0.22, 5.4, 0.22, lampDark, { omitBottom: true, s: -0.3 });
+      b.segment([lamp.x, 5.2, lamp.z], [lamp.x + ax * 1.15, 5.2, lamp.z + az * 1.15], 0.14, 0.14, lampDark);
+      b.box(lamp.x + ax * 1.15, 5.1, lamp.z + az * 1.15, 0.7, 0.28, 0.7, PALETTE.headlight, { e: 1, omitBottom: true });
+      continue;
+    }
+    const fx = Math.sin(lamp.fallYaw), fz = Math.cos(lamp.fallYaw);
+    const ct = Math.cos(lamp.tilt), st = Math.sin(lamp.tilt);
+    // Rotate a point offset from the base in the vertical plane of the fall.
+    const R = (ox, oy, oz) => {
+      const along = ox * fx + oz * fz;
+      const px = ox - along * fx, pz = oz - along * fz;
+      const na = oy * st + along * ct, ny = oy * ct - along * st;
+      return [lamp.x + px + na * fx, 0.05 + Math.max(0, ny), lamp.z + pz + na * fz];
+    };
+    b.box(lamp.x, 0.08, lamp.z, 0.42, 0.16, 0.42, shade(lampDark, 0.7), { omitBottom: true });
+    const top = R(0, 5.2, 0), head = R(ax * 1.15, 5.1, az * 1.15);
+    b.segment(R(0, 0.1, 0), top, 0.22, 0.22, lampDark);
+    b.segment(top, head, 0.14, 0.14, lampDark);
+    b.segment(R(ax * 0.8, 5.1, az * 0.8), R(ax * 1.5, 5.1, az * 1.5), 0.7, 0.28, shade(PALETTE.headlight, lamp.landed ? 0.4 : 0.8), { e: lamp.landed ? 0.05 : 0.5 });
+    shadows.push({ x: (lamp.x + head[0]) / 2, z: (lamp.z + head[2]) / 2, y: 0.04, rx: 0.5, rz: 2.8 * st + 0.4, alpha: 0.35, rot: lamp.fallYaw });
   }
 
   // Fire hydrants: squat red posts with brass caps, or a sheared stump throwing a geyser.

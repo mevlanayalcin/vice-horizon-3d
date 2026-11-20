@@ -348,6 +348,20 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 .cm-cars { display: flex; flex-wrap: wrap; gap: 4px; }
 .cm-cars span { font-size: 7.5px; font-weight: 800; letter-spacing: 0.08em; padding: 3px 5px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, 0.16); color: #7f8b96; }
 .cm-cars span.on { color: #062015; background: var(--mint); border-color: var(--mint); }
+.cm-swatches { display: flex; flex-wrap: wrap; gap: 4px; }
+.cm-swatch { position: relative; display: flex; align-items: center; gap: 5px; padding: 3px 6px 3px 3px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(0, 0, 0, 0.25); color: #b9c3cc; font: inherit; cursor: pointer; }
+.cm-swatch i { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.35); flex: none; }
+.cm-swatch b { font-size: 7px; letter-spacing: 0.08em; font-weight: 800; }
+.cm-swatch u { text-decoration: none; font-size: 6.5px; color: var(--gold); letter-spacing: 0.06em; }
+.cm-swatch.on { border-color: var(--cyan); color: #fff; box-shadow: 0 0 0 1px var(--cyan), 0 0 10px rgba(85, 235, 255, 0.35); }
+.cm-swatch.locked { opacity: 0.45; }
+.cm-swatch:hover:not(.locked) { border-color: rgba(255, 255, 255, 0.5); }
+.cm-medal, .cm-pb { font-style: normal; font-size: 6.5px; font-weight: 900; letter-spacing: 0.1em; padding: 1px 4px; border-radius: 3px; margin-left: 5px; vertical-align: 1px; }
+.cm-medal.gold { background: linear-gradient(135deg, #ffe08a, #e0a52a); color: #2a1a00; }
+.cm-medal.silver { background: linear-gradient(135deg, #f2f5f7, #9aa6b0); color: #1b2128; }
+.cm-medal.bronze { background: linear-gradient(135deg, #f0b07a, #a8642e); color: #24120a; }
+.cm-pb { border: 1px solid rgba(85, 235, 255, 0.5); color: var(--cyan); }
+.cm-card h4 em.cm-hot { color: #ff9a5a; text-shadow: 0 0 8px rgba(255, 120, 60, 0.6); }
 .cm-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
 .cm-stats div { display: flex; justify-content: space-between; font-size: 9.5px; color: #aeb8c0; padding: 3px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
 .cm-stats b { color: #fff; }

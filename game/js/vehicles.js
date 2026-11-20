@@ -4,6 +4,7 @@
 // so all three systems produce identical, readable silhouettes. All original designs.
 
 import { VEHICLES, clamp, rgb, shade, lerp } from './config.js';
+import { addNeonText } from './signage.js';
 
 let nextId = 1;
 
@@ -287,8 +288,10 @@ function rampProgress(ramp, x, z) {
 // ---------------------------------------------------------------------------
 // Geometry: every car is sculpted. The body is a loft of rounded
 // superellipse sections along the car (front +Z), so hoods slope, fenders swell and the
-// nose and tail round off; a glass greenhouse rides on the belt line, flared arches sit
-// over sculpted tyres with spoked rims, and LED strips are decals wrapped on the paint.
+// nose and tail round off; a glass greenhouse rides on the belt line, flared arches over
+// matte-black wheel wells frame sculpted tyres on ten-spoke alloys with glowing calipers,
+// and LED strips and unit livery are decals wrapped on the paint. Mirrors, diffusers,
+// chrome exhausts, hood scoops and the SBPD cruiser's push-bar and lightbar are added on.
 // ---------------------------------------------------------------------------
 
 /**
@@ -308,6 +311,11 @@ BODY_STYLES.cruiser = BODY_STYLES.sedan;
 
 const TRIM = rgb(0x121318);
 const TYRE = rgb(0x17181c);
+const WELL = rgb(0x07080a);
+const CHROME = rgb(0xd9dde2);
+const CALIPER = rgb(0xff4a2a);
+const SBPD_CYAN = rgb(0x1fd2e6);
+const SBPD_GOLD = rgb(0xffc24b);
 
 /** Belt-line height at u, eased between the style's keypoints. */
 function beltAt(style, u) {
@@ -386,11 +394,13 @@ export function buildVehicle(b, v, time = 0, opts = {}) {
     glossAt: (i, j) => (Math.sin(ts[j]) < -0.6 ? 0 : PAINT),
   });
 
-  // Decals wrapped on the paint: LED strips, intakes, stripes and livery.
-  const decal = (u0, u1, t0, t1, color, e = 0, gloss = 0, cells = 6) => {
+  // Decals wrapped on the paint: LED strips, intakes, stripes and livery. Long decals get
+  // extra rows along the car so they follow the body's curve instead of cutting a chord.
+  const decal = (u0, u1, t0, t1, color, e = 0, gloss = 0, cells = 6, lift = 0.014) => {
     const pts = [], ax = [];
-    for (let a = 0; a <= 1; a += 1) {
-      const u = a ? u1 : u0;
+    const spans = Math.max(1, Math.ceil(Math.abs(u1 - u0) / (lod ? 0.4 : 0.16)));
+    for (let a = 0; a <= spans; a += 1) {
+      const u = u0 + ((u1 - u0) * a) / spans;
       const row = [];
       for (let k = 0; k <= cells; k += 1) {
         const t = t0 + ((t1 - t0) * k) / cells;
@@ -398,7 +408,7 @@ export function buildVehicle(b, v, time = 0, opts = {}) {
         const f = shape.frame(u);
         const dx = p[0], dy = p[1] - f.yc, dz = Math.sign(u) * (1 - f.e) * 0.6;
         const len = Math.hypot(dx, dy, dz) || 1;
-        row.push(P(p[0] + (dx / len) * 0.014, p[1] + (dy / len) * 0.014, p[2] + (dz / len) * 0.014));
+        row.push(P(p[0] + (dx / len) * lift, p[1] + (dy / len) * lift, p[2] + (dz / len) * lift));
       }
       pts.push(row);
       const f = shape.frame(u);
@@ -410,7 +420,9 @@ export function buildVehicle(b, v, time = 0, opts = {}) {
   const headCol = rgb(0xf4fbff), tailCol = v.braking ? rgb(0xff3a3a) : rgb(0xe0262c);
   decal(0.905, 0.962, 0.07 * PI, 0.30 * PI, headCol, 1, 0, 3);
   decal(0.905, 0.962, 0.70 * PI, 0.93 * PI, headCol, 1, 0, 3);
-  decal(-0.972, -0.935, 0.04 * PI, 0.96 * PI, tailCol, v.braking ? 1 : 0.86, 0, lod ? 4 : 10);
+  // The LED tail bar sits in a recessed black channel that wraps the tail.
+  decal(-0.985, -0.925, 0.02 * PI, 0.98 * PI, TRIM, 0, -0.5, lod ? 4 : 10, 0.01);
+  decal(-0.972, -0.94, 0.05 * PI, 0.95 * PI, tailCol, v.braking ? 1 : 0.86, 0, lod ? 4 : 10, 0.02);
   decal(0.935, 0.99, 1.22 * PI, 1.78 * PI, TRIM, 0, 0, 4);
   decal(-0.99, -0.94, 1.2 * PI, 1.8 * PI, TRIM, 0, 0, 4);
   if (style.wing || v.type === 'coupe') {
@@ -421,10 +433,16 @@ export function buildVehicle(b, v, time = 0, opts = {}) {
     decal(0.2, 1, 0.44 * PI, 0.56 * PI, accent, 0.08, PAINT, 2);
   }
   if (v.police) {
-    decal(-0.5, 0.48, -0.16 * PI, 0.02 * PI, spec.colors.accent, 0, PAINT, 2);
-    decal(-0.5, 0.48, 0.98 * PI, 1.16 * PI, spec.colors.accent, 0, PAINT, 2);
-    decal(-0.1, 0.1, 0.02 * PI, 0.12 * PI, rgb(0xffc24b), 0.5, 0, 1);
-    decal(-0.1, 0.1, 0.88 * PI, 0.98 * PI, rgb(0xffc24b), 0.5, 0, 1);
+    // SBPD unit livery: a navy lower sweep, a cyan flank band and a gold pinstripe over it.
+    decal(-0.86, 0.84, -0.2 * PI, -0.04 * PI, spec.colors.accent, 0, PAINT, 2);
+    decal(-0.86, 0.84, 1.04 * PI, 1.2 * PI, spec.colors.accent, 0, PAINT, 2);
+    decal(-0.8, 0.8, -0.04 * PI, 0.035 * PI, SBPD_CYAN, 0.35, PAINT, 2, 0.018);
+    decal(-0.8, 0.8, 0.965 * PI, 1.04 * PI, SBPD_CYAN, 0.35, PAINT, 2, 0.018);
+    decal(-0.78, 0.78, 0.045 * PI, 0.07 * PI, SBPD_GOLD, 0.55, 0, 1, 0.02);
+    decal(-0.78, 0.78, 0.93 * PI, 0.955 * PI, SBPD_GOLD, 0.55, 0, 1, 0.02);
+    // Hood and boot stripes in the unit colours.
+    decal(0.25, 0.9, 0.488 * PI, 0.512 * PI, SBPD_CYAN, 0.3, PAINT, 1, 0.018);
+    decal(-0.9, -0.55, 0.488 * PI, 0.512 * PI, SBPD_GOLD, 0.4, PAINT, 1, 0.018);
   }
   if (v.type === 'taxi') decal(-0.6, 0.6, -0.04 * PI, 0.04 * PI, rgb(0x212328), 0, 0, 1);
   if (v.health < 35) decal(0.3, 0.75, 0.3 * PI, 0.7 * PI, rgb(0x2a2420), 0, 0, 2);
@@ -487,11 +505,23 @@ export function buildVehicle(b, v, time = 0, opts = {}) {
     const steerYaw = az > 0 ? (v.steer ?? 0) * 0.42 : 0;
     for (const side of [-1, 1]) {
       const cx = side * (W / 2 - 0.2);
-      buildWheel(b, P, cx, az, side, wheelR, 0.28, steerYaw, v.wheelSpin, rim, sides, blurred, lod);
-      // Arch: a flared shell over the tyre, swelling past the body side.
+      buildWheel(b, P, cx, az, side, wheelR, 0.28, steerYaw, v.wheelSpin, rim, sides, blurred, lod, v.police ? rgb(0x3f8cff) : CALIPER);
+      // Wheel well: a matte-black liner fills the arch above the tyre, so the wheel sits
+      // in a deep recess instead of against the paint.
       const R = wheelR + 0.07;
-      const archRows = [];
       const steps = lod ? 5 : 9;
+      const well = [];
+      for (let k = 0; k <= steps; k += 1) {
+        const th = -0.04 * PI + (1.08 * PI * k) / steps;
+        const c = Math.cos(th), s = Math.sin(th);
+        well.push([
+          P(side * (W / 2 - 0.035), wheelR + s * (R + 0.01), az + c * (R + 0.01)),
+          P(side * (W / 2 - 0.035), wheelR + s * wheelR * 1.005, az + c * wheelR * 1.005),
+        ]);
+      }
+      b.surface(well, { color: WELL, flip: side < 0 });
+      // Arch: a flared shell over the tyre, swelling past the body side.
+      const archRows = [];
       for (let k = 0; k <= steps; k += 1) {
         const th = -0.04 * PI + (1.08 * PI * k) / steps;
         const cols = [[shape.hw0 - 0.16, 0.0], [shape.hw0 - 0.04, style.flare * 0.5], [W / 2 - 0.02, style.flare * 0.3], [W / 2 - 0.01, -0.04]];
@@ -508,12 +538,19 @@ export function buildVehicle(b, v, time = 0, opts = {}) {
     }
   }
 
-  // --- Details: mirrors, wing, exhausts, roof gear.
+  // --- Details: raked mirrors, wing, diffuser, exhausts, hood gear, roof gear.
   const f0 = shape.frame(cA);
   const mirrorY = f0.yc + f0.hh * f0.e + 0.1;
   for (const side of [-1, 1]) {
-    const m = P(side * (shape.topWidth(cA, 0.05) + 0.05), mirrorY - 0.03, (cA * L) / 2 - 0.16);
-    b.ellipsoid(m[0], m[1], m[2], 0.085, 0.05, 0.06, body, { yaw: turn, segments: 6, rings: 4, s: PAINT });
+    const root = P(side * (shape.topWidth(cA, 0.05) - 0.02), mirrorY - 0.08, (cA * L) / 2 - 0.1);
+    const m = P(side * (shape.topWidth(cA, 0.05) + 0.1), mirrorY - 0.01, (cA * L) / 2 - 0.2);
+    b.tube([root, m], [0.022, 0.018], 4, TRIM);
+    // A swept teardrop housing, raked back, its glass facing the driver.
+    b.ellipsoid(m[0], m[1], m[2], 0.1, 0.055, 0.075, body, { yaw: turn + side * 0.18, segments: 7, rings: 4, s: PAINT });
+    if (!lod) {
+      const g = P(side * (shape.topWidth(cA, 0.05) + 0.1), mirrorY - 0.01, (cA * L) / 2 - 0.278);
+      b.ellipsoid(g[0], g[1], g[2], 0.078, 0.04, 0.012, rgb(0x8fb7d0), { yaw: turn + side * 0.18, segments: 6, rings: 3, s: GLASS, e: 0.1 });
+    }
   }
   if (style.wing) {
     const ft = shape.frame(-0.86);
@@ -529,28 +566,92 @@ export function buildVehicle(b, v, time = 0, opts = {}) {
       b.box(ex, wingY + baseY, ez, 0.03, 0.16, 0.46, shade(body, 0.55), { rotY: yaw, omitBottom: true });
     }
   }
+  const sporty = v.type === 'supercar' || v.type === 'coupe' || v.type === 'muscle';
   if (!lod) {
-    for (const side of [-1, 1]) {
-      const e = P(side * W * 0.2, style.sill + 0.08, -L * 0.495);
-      b.ellipsoid(e[0], e[1], e[2], 0.07, 0.07, 0.06, rgb(0xb9bcc0), { yaw: turn, segments: 6, rings: 3, e: 0.1 });
+    // Rear aero diffuser: a black undertray with vertical strakes under the bumper.
+    const tailZ = -L * 0.47;
+    const dy = style.sill + 0.03;
+    const [dxp, , dzp] = P(0, 0, tailZ);
+    b.box(dxp, baseY + dy, dzp, W * 0.66, 0.05, 0.36, TRIM, { rotY: yaw, s: -0.3 });
+    if (sporty) {
+      for (let i = -2; i <= 2; i += 1) {
+        const [fx, , fz] = P(i * W * 0.11, 0, tailZ - 0.06);
+        b.box(fx, baseY + dy + 0.07, fz, 0.025, 0.13, 0.3, rgb(0x1d1f24), { rotY: yaw, omitBottom: true, s: -0.4 });
+      }
+    }
+    // Chrome exhaust tips: twin pipes per side on the sporty cars, one each on the rest.
+    const pipes = sporty ? [-0.27, -0.19, 0.19, 0.27] : [-0.22, 0.22];
+    for (const px of pipes) {
+      const a = P(px * W, dy + 0.06, tailZ + 0.05), c = P(px * W, dy + 0.06, -L * 0.505);
+      b.tube([a, c], [0.05, 0.055], 8, CHROME, { s: -0.95, capEnds: true, capColor: rgb(0x0a0a0c), capE: v.boosting ? 0.9 : 0 });
     }
   }
   const roofY = style.roof + 0.03;
   if (v.type === 'muscle') {
-    const s = P(0, beltAt(style, 0.55) + 0.05, L * 0.28);
-    b.box(s[0], s[1], s[2], W * 0.34, 0.12, 0.6, TRIM, { rotY: yaw, omitBottom: true });
+    // A sculpted shaker scoop rising from the hood, its black intake facing the wind.
+    const hoodY = beltAt(style, 0.5);
+    const s = P(0, hoodY - 0.02, L * 0.26);
+    b.ellipsoid(s[0], s[1], s[2], W * 0.17, 0.13, 0.46, body, { yaw: turn, segments: lod ? 6 : 10, rings: 4, top: 0.5, s: PAINT });
+    const mouth = P(0, hoodY + 0.05, L * 0.26 + 0.42);
+    b.ellipsoid(mouth[0], mouth[1], mouth[2], W * 0.13, 0.055, 0.03, WELL, { yaw: turn, segments: 8, rings: 3 });
+    if (!lod) {
+      for (const side of [-1, 1]) {
+        const strip = P(side * W * 0.12, hoodY + 0.12, L * 0.24);
+        b.box(strip[0], strip[1], strip[2], 0.02, 0.012, 0.6, CHROME, { rotY: yaw, s: -0.9 });
+      }
+    }
+  }
+  if (v.type === 'supercar' && !lod) {
+    // Twin heat-extractor vents cut into the hood.
+    for (const side of [-1, 1]) decal(0.42, 0.66, (0.5 + side * 0.13) * PI - 0.06, (0.5 + side * 0.13) * PI + 0.06, TRIM, 0, -0.4, 2, 0.016);
   }
   if (v.police) {
     const uMid = ((cB + cC) / 2) * L / 2;
-    const base = P(0, roofY + 0.04, uMid);
-    b.box(base[0], base[1], base[2], W * 0.52, 0.07, 0.34, rgb(0x1a1c22), { rotY: yaw, omitBottom: true });
     const phase = Math.floor((time + (v.sirenPhase ?? 0) * 0.5) * 7) % 2;
-    const red = P(-W * 0.14, roofY + 0.13, uMid), blue = P(W * 0.14, roofY + 0.13, uMid);
-    b.ellipsoid(red[0], red[1], red[2], W * 0.13, 0.08, 0.15, phase ? rgb(0xff2a3d) : rgb(0x7a1420), { yaw: turn, segments: 8, rings: 4, e: phase ? 1 : 0.5 });
-    b.ellipsoid(blue[0], blue[1], blue[2], W * 0.13, 0.08, 0.15, phase ? rgb(0x18266e) : rgb(0x2f6bff), { yaw: turn, segments: 8, rings: 4, e: phase ? 0.5 : 1 });
-    // Push bar.
-    const pb = P(0, 0.5, L * 0.515);
-    b.box(pb[0], pb[1], pb[2], W * 0.62, 0.3, 0.08, rgb(0x2c2e33), { rotY: yaw, omitBottom: true });
+    // Lightbar: a low black housing on roof feet, chrome end caps, four lens pods
+    // flashing red / blue in turn and a white takedown lamp in the middle.
+    const base = P(0, roofY + 0.05, uMid);
+    b.box(base[0], base[1], base[2], W * 0.66, 0.08, 0.32, rgb(0x15171c), { rotY: yaw, omitBottom: true, s: -0.5 });
+    for (const side of [-1, 1]) {
+      const cap = P(side * W * 0.33, roofY + 0.1, uMid);
+      b.ellipsoid(cap[0], cap[1], cap[2], 0.06, 0.07, 0.15, CHROME, { yaw: turn, segments: 6, rings: 3, s: -0.95 });
+    }
+    const lenses = [[-0.25, true, phase], [-0.11, true, !phase], [0.11, false, phase], [0.25, false, !phase]];
+    for (const [lx, isRed, on] of lenses) {
+      const l = P(lx * W, roofY + 0.14, uMid);
+      const color = isRed ? (on ? rgb(0xff2a3d) : rgb(0x6a1220)) : (on ? rgb(0x2f6bff) : rgb(0x14205a));
+      b.ellipsoid(l[0], l[1], l[2], W * 0.065, 0.07, 0.14, color, { yaw: turn, segments: 8, rings: 4, e: on ? 1 : 0.35, s: GLASS });
+    }
+    const take = P(0, roofY + 0.13, uMid + 0.02);
+    b.box(take[0], take[1], take[2], 0.14, 0.06, 0.26, rgb(0xf4f8ff), { rotY: yaw, e: 0.7, omitBottom: true });
+    // Steel push-bar: two uprights and two crossbars bolted ahead of the grille.
+    const nose = L * 0.5 + 0.12;
+    const steel = rgb(0x2a2d33);
+    for (const side of [-1, 1]) {
+      b.tube([P(side * W * 0.2, 0.28, nose - 0.08), P(side * W * 0.2, 0.86, nose), P(side * W * 0.2, 0.92, nose - 0.14)], [0.045, 0.045, 0.04], 6, steel, { s: -0.6 });
+    }
+    b.tube([P(-W * 0.3, 0.5, nose), P(W * 0.3, 0.5, nose)], [0.04, 0.04], 6, steel, { s: -0.6, capEnds: true });
+    b.tube([P(-W * 0.24, 0.78, nose + 0.01), P(W * 0.24, 0.78, nose + 0.01)], [0.035, 0.035], 6, steel, { s: -0.6, capEnds: true });
+    if (!lod) {
+      for (const side of [-1, 1]) {
+        const strobe = P(side * W * 0.14, 0.64, nose + 0.02);
+        b.box(strobe[0], strobe[1], strobe[2], 0.12, 0.05, 0.03, side < 0 ? rgb(0xff2a3d) : rgb(0x2f6bff), { rotY: yaw, e: (side < 0) === !!phase ? 1 : 0.3 });
+      }
+      // Side searchlight pod on the driver's A-pillar.
+      const pod = P(-(shape.topWidth(cA, 0.05) + 0.07), mirrorY + 0.12, (cA * L) / 2 - 0.32);
+      b.tube([P(-(shape.topWidth(cA, 0.05) - 0.02), mirrorY + 0.02, (cA * L) / 2 - 0.3), pod], [0.02, 0.02], 4, CHROME);
+      b.ellipsoid(pod[0], pod[1], pod[2], 0.075, 0.075, 0.11, CHROME, { yaw: turn, segments: 7, rings: 4, s: -0.95 });
+      const lens = P(-(shape.topWidth(cA, 0.05) + 0.07), mirrorY + 0.12, (cA * L) / 2 - 0.215);
+      b.ellipsoid(lens[0], lens[1], lens[2], 0.06, 0.06, 0.012, rgb(0xfff6dc), { yaw: turn, segments: 7, rings: 2, e: 0.9 });
+      // Unit lettering on both front doors and a boot lip spoiler.
+      for (const side of [-1, 1]) {
+        const door = P(side * (shape.hw0 + 0.03), style.sill + 0.4, L * 0.04);
+        addNeonText(b, 'SBPD', { x: door[0], y: door[1], z: door[2], height: 0.15, normal: [side * cos, -side * sin], color: rgb(0x13213f), emit: 0, weight: 0.12 });
+      }
+    }
+    const ft = shape.frame(-0.88);
+    const [sx, , sz] = P(0, 0, -L * 0.44);
+    b.box(sx, baseY + ft.yc + ft.hh * ft.e + 0.03, sz, W * 0.72, 0.035, 0.18, rgb(0x15171c), { rotY: yaw, omitBottom: true, s: -0.5 });
   }
   if (v.type === 'taxi') {
     const t = P(0, roofY + 0.12, ((cB + cC) / 2) * L / 2);
@@ -569,8 +670,12 @@ export function buildVehicle(b, v, time = 0, opts = {}) {
   return v;
 }
 
-/** A rounded tyre (tread, shoulders, sidewalls) with a dished, spoked rim on its outer face. */
-function buildWheel(b, P, cx, cz, side, r, width, steerYaw, spin, rimColor, sides, blurred, lod) {
+/**
+ * A rounded tyre (tread, shoulders, sidewalls) with a dished multi-spoke alloy on its outer
+ * face: a slotted brake rotor and a glowing caliper behind the spokes, a polished lip and
+ * a raised metallic hub cap.
+ */
+function buildWheel(b, P, cx, cz, side, r, width, steerYaw, spin, rimColor, sides, blurred, lod, caliper = CALIPER) {
   const cs = Math.cos(steerYaw), ss = Math.sin(steerYaw);
   const at = (a, rho, phi) => {
     const yr = Math.cos(phi) * rho, zr = Math.sin(phi) * rho;
@@ -590,18 +695,47 @@ function buildWheel(b, P, cx, cz, side, r, width, steerYaw, spin, rimColor, side
   // Rows wrap around the axle; treat each profile column as the ring.
   const ringRows = profile.map((_, c) => rows.map((row) => row[c]));
   b.surface(ringRows, { wrap: true, axis: profile.map(([a]) => at(a, 0, 0)), color: TYRE });
-  // Rim face: five spokes over a dark barrel, a bright lip and a hub cap.
+  // Rim face: the brake rotor and caliper sit deepest, then ten split spokes, a bright lip
+  // and a domed hub cap. A fast wheel blurs into a soft metallic disc.
   const face = hw + 0.004;
-  const hub = at(face + 0.02, 0, 0);
   const n = sides;
+  const rotor = rgb(0x5a5d63);
+  if (!lod) {
+    // Rotor disc (does not spin with the rim's pattern, but reads through the gaps).
+    const hubIn = at(face - 0.07, 0, 0);
+    for (let k = 0; k < n; k += 1) {
+      const p0 = (k / n) * Math.PI * 2, p1 = ((k + 1) / n) * Math.PI * 2;
+      b.tri(hubIn, at(face - 0.07, r * 0.56, p0), at(face - 0.07, r * 0.56, p1), k % 2 ? rotor : shade(rotor, 0.8), { s: -0.5 });
+    }
+    // Caliper clamped over the rotor at the top-rear, lit like hot brakes.
+    const cal = [];
+    for (let k = 0; k <= 4; k += 1) {
+      const phi = -0.95 - (k / 4) * 0.9;
+      cal.push([at(face - 0.05, r * 0.6, phi), at(face - 0.05, r * 0.38, phi)]);
+    }
+    b.surface(cal, { color: caliper, e: 0.55 });
+  }
+  const spokes = 10;
+  const hub = at(face + 0.035, 0, 0);
+  const lipColor = shade(rimColor, 1.15);
   for (let k = 0; k < n; k += 1) {
     const p0 = (k / n) * Math.PI * 2 + spin, p1 = ((k + 1) / n) * Math.PI * 2 + spin;
-    const spoke = blurred ? true : (Math.floor((k / n) * 15) % 3 === 0);
-    const inner = blurred ? shade(rimColor, 0.62) : spoke ? rimColor : rgb(0x24262b);
-    const a0 = at(face, r * 0.6, p0), a1 = at(face, r * 0.6, p1);
-    const m0 = at(face - 0.03, r * 0.18, p0), m1 = at(face - 0.03, r * 0.18, p1);
-    b.quad(m0, a0, a1, m1, inner, { s: -0.6 });
-    b.tri(hub, m0, m1, shade(rimColor, 1.08), { e: 0.08, s: -0.6 });
+    // Polished outer lip.
+    b.quad(at(face, r * 0.6, p0), at(face, r * 0.66, p0), at(face, r * 0.66, p1), at(face, r * 0.6, p1), lipColor, { e: 0.05, s: -0.9 });
+    b.tri(hub, at(face + 0.012, r * 0.17, p0), at(face + 0.012, r * 0.17, p1), shade(rimColor, 1.25), { e: 0.12, s: -0.95 });
+    if (blurred) {
+      b.quad(at(face - 0.03, r * 0.17, p0), at(face, r * 0.6, p0), at(face, r * 0.6, p1), at(face - 0.03, r * 0.17, p1), shade(rimColor, 0.66), { s: -0.6 });
+    }
+  }
+  if (!blurred) {
+    // Ten tapered spokes, each a slim wedge from the hub out to the lip.
+    for (let k = 0; k < spokes; k += 1) {
+      const a = (k / spokes) * Math.PI * 2 + spin;
+      const wIn = 0.11, wOut = 0.085 * (lod ? 1.6 : 1);
+      const i0 = at(face - 0.01, r * 0.17, a - wIn), i1 = at(face - 0.01, r * 0.17, a + wIn);
+      const o0 = at(face - 0.03, r * 0.6, a - wOut), o1 = at(face - 0.03, r * 0.6, a + wOut);
+      b.quad(i0, o0, o1, i1, rimColor, { s: -0.75 });
+    }
   }
 }
 
@@ -657,7 +791,7 @@ export function vehicleGlow(v, time, add, beam = null, beamGain = 1) {
   if (v.police && v.sirenOn) {
     const phase = Math.floor((time + (v.sirenPhase ?? 0) * 0.5) * 7) % 2;
     const uMid = ((style.cabin[1] + style.cabin[2]) / 2) * L / 2;
-    const red = at(-W * 0.14, style.roof + 0.16, uMid), blue = at(W * 0.14, style.roof + 0.16, uMid);
+    const red = at(-W * 0.18, style.roof + 0.17, uMid), blue = at(W * 0.18, style.roof + 0.17, uMid);
     add(red[0], red[1], red[2], rgb(0xff2a3d), phase ? 2.6 : 1.3, phase ? 0.95 : 0.4);
     add(blue[0], blue[1], blue[2], rgb(0x2f6bff), phase ? 1.3 : 2.6, phase ? 0.4 : 0.95);
     add(red[0], red[1], red[2], rgb(0xffd6dc), 0.3, phase ? 1 : 0.3);
@@ -669,6 +803,18 @@ export function vehicleGlow(v, time, add, beam = null, beamGain = 1) {
   }
   if (v.mission) {
     add(v.x, v.y + style.roof + 0.4, v.z, rgb(0xffc24b), 2.0, 0.6);
+  }
+  if (v.underglow) {
+    // Neon underglow from the Safehouse Garage: a soft pool on the road under the car and
+    // a bright strip of halos along each sill.
+    const pulse = 0.88 + Math.sin(time * 3.1) * 0.12;
+    add(v.x, v.y + 0.05, v.z, v.underglow, 2.6, 0.5 * pulse, { sx: W * 0.42, sz: L * 0.36, rot });
+    for (const side of [-1, 1]) {
+      for (let i = -1; i <= 1; i += 1) {
+        const s = at(side * W * 0.46, 0.2, i * L * 0.26);
+        add(s[0], s[1], s[2], v.underglow, 0.55, 0.42 * pulse);
+      }
+    }
   }
   if (v.smoke > 0.05) {
     add(v.x - fx * L * 0.3, v.y + 1.2, v.z - fz * L * 0.3, rgb(0x3a3330), 1.6, v.smoke * 0.4);

@@ -104,6 +104,20 @@ function stageSmoke(car, count, spread = 6) {
   }
 }
 
+/** Freeze the nearest street lamp mid-topple, dark, with sparks at its sheared base. */
+function knockLamp(x, z, fallYaw, tilt) {
+  let lamp = null, best = 6;
+  for (const l of world.lampposts) {
+    const d = Math.hypot(l.x - x, l.z - z);
+    if (d < best) { best = d; lamp = l; }
+  }
+  if (!lamp) return null;
+  Object.assign(lamp, { knocked: true, fallYaw, tilt, spin: 0, landed: true });
+  lamp.glow.alpha = 0;
+  stagedSparks(lamp.x, 0.35, lamp.z, 12, 0.6);
+  return lamp;
+}
+
 function driveHero(type, x, z, heading, speed, colors = {}) {
   const hero = stageCar(type, x, z, heading, speed);
   if (colors.body) hero.color = colors.body;
@@ -278,6 +292,8 @@ function stageChase() {
   // Rubber and smoke from the drifting hero car, sparks where the cruiser rubbed its flank.
   stageSkids(hero, 26, -0.35, 0.6);
   stageSmoke(hero, 18, 7);
+  // A kerbside lamppost the slide clipped, caught mid-fall in a shower of sparks.
+  knockLamp(124, 245.5, -Math.PI / 2 - 0.5, 0.62);
   for (let i = 0; i < 6; i += 1) {
     combat.particles.push({
       x: 130.6 + random() * 1.2, y: 0.4 + random() * 0.5, z: 249.6 + random() * 0.6, vx: 0, vy: 0, vz: 0,
@@ -354,6 +370,8 @@ function stageStart() {
   careerPlayer({ cash: 23850, respect: 420, health: 92, armor: 40, mag: 27 });
   progression.state.upgrades.engine = 1;
   progression.state.stored = ['coupe', 'taxi'];
+  // The Paint Shop's Bay Cyan underglow lit under the Solaris GT.
+  progression.state.neon = 'cyan';
   const p = combat.player;
 
   const hero = driveHero('supercar', 30, 252.5, -Math.PI / 2 + 0.03, 31, { body: rgb(0xff2f86), accent: rgb(0x39e9ff) });
@@ -478,12 +496,13 @@ function stageFoot() {
   police.setPeak(3);
   const cop = police.spawnStagedCruiser(24, -6, Math.PI / 2 + 0.35);
   cop.sirenOn = true; cop.remote = true; cop.speed = 18;
-  // Bystanders scattering.
+  // Bystanders scattering, one cowering by the kerb with her hands over her head.
   traffic.addStagedPed(49, 9.5, -1.2, 'civ', { panic: 3, panicArms: true });
   traffic.addStagedPed(92, 11, 1.4, 'civ', { panic: 3, panicArms: true });
   traffic.addStagedPed(96, -2, 2.6, 'civ', { panic: 3, panicArms: true });
+  traffic.addStagedPed(56.5, -7.5, 2.4, 'civ', { panic: 3, duck: 1, longHair: true });
   for (const [x, z, h] of [[30, 14, Math.PI / 2], [104, 15, -Math.PI / 2]]) strollPed(x, z, h);
-  hud.dialogue('MATEO', 'Drop the vault guards, then take the green muscle car. Keys are in it.', 120000);
+  hud.dialogue('MATEO', 'Drop the vault guards, then take the teal muscle car. Keys are in it.', 120000);
   // Tight over-the-shoulder camera, right of the player, low behind the car's tail.
   camera.pos = [px + 1.9, 2.55, pz + 5.4];
   camera.target = [px + 1.4, 1.3, pz - 30];
@@ -500,8 +519,12 @@ function stageMenu() {
   progression.state.upgrades = { engine: 2, nitro: 1, armor: 1, grip: 0 };
   progression.state.stored = ['coupe', 'muscle', 'taxi', 'sedan'];
   Object.assign(progression.state.stats, { stolen: 23, stunts: 5, evaded: 9, activities: 6, takedowns: 31 });
-  activities.state.best = { sprint: 38.4, courier: 61.2 };
-  activities.state.completed = { sprint: 2, courier: 1 };
+  activities.state.best = { sprint: 38.4, courier: 61.2, circuit: 30.9 };
+  activities.state.completed = { sprint: 2, courier: 1, circuit: 1 };
+  activities.state.streak = 3;
+  activities.state.bestStreak = 3;
+  progression.state.paint = 'lagoon';
+  progression.state.neon = 'pink';
   const hero = driveHero('supercar', 132, 120, Math.PI, 0, { body: rgb(0x27e2d2), accent: rgb(0xff3f95) });
   const p = combat.player;
   p.x = hero.x; p.z = hero.z; p.heading = hero.heading;

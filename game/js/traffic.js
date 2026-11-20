@@ -151,11 +151,17 @@ export function createTraffic(world, options = {}) {
     return best;
   }
 
-  function panicAt(x, z, radius = 30) {
+  /**
+   * Scare everyone within `radius`. Close to gunfire, about a third of bystanders duck and
+   * cower with their hands over their heads; everyone else runs away with arms up.
+   */
+  function panicAt(x, z, radius = 30, opts = {}) {
     for (const ped of pedestrians) {
-      if (Math.hypot(ped.x - x, ped.z - z) < radius) {
+      const d = Math.hypot(ped.x - x, ped.z - z);
+      if (d < radius) {
         ped.panic = 2.8 + Math.random() * 2.2;
         ped.panicDir = Math.atan2(ped.x - x, ped.z - z);
+        if (opts.gunfire && d < radius * 0.55 && (ped.id % 3 === 0) && !ped.stationary) ped.duck = 1.6 + Math.random() * 1.4;
       }
     }
   }
@@ -181,19 +187,28 @@ export function createTraffic(world, options = {}) {
       longHair: options.longHair ?? Math.random() < 0.4,
       style, pause: 999, speedNow: 0, stationary: true,
       panicArms: options.panicArms ?? false,
+      duck: options.duck ?? 0,
       aiming: false,
     };
     pedestrians.push(ped);
     return ped;
   }
 
-  function update(dt, player, playerVehicle, sirensNear = false) {
+  function update(dt, player, playerVehicle, sirensNear = false, sirens = []) {
     time += dt;
     // Cars.
     for (const car of cars) {
       if (car.staged || car.parked) continue;
       const speed = car.speed;
       let target = car.loopSpeed;
+      // Pull over for a cruiser running its siren close by: ease toward the kerb and slow.
+      let yieldTo = 0;
+      for (const s of sirens) {
+        const d = Math.hypot(s.x - car.x, s.z - car.z);
+        if (d < 46) yieldTo = Math.max(yieldTo, 1 - d / 46);
+      }
+      const prevYield = car.yield ?? 0;
+      car.yield = lerp(prevYield, yieldTo > 0 ? 1 : 0, clamp(dt * (yieldTo > 0 ? 2.2 : 0.8), 0, 1));
       // React to the player's car: brake if it blocks the lane ahead.
       if (playerVehicle) {
         const aheadX = car.x + Math.sin(car.heading) * 7;
@@ -203,6 +218,7 @@ export function createTraffic(world, options = {}) {
         if (car.health < 25) target = 0;
       }
       if (sirensNear) target *= 0.75;
+      target *= 1 - car.yield * 0.7;
       car.desiredSpeed = target;
       car.loopSpeed = lerp(car.loopSpeed, Math.max(2.0, target), clamp(dt * 2, 0, 1));
       const moveSpeed = car.loopSpeed;
@@ -213,12 +229,14 @@ export function createTraffic(world, options = {}) {
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
       car.heading += diff * clamp(dt * 8, 0, 1);
-      car.x = pos.x;
-      car.z = pos.z;
+      // The kerbward swerve: offset toward the kerb side of the lane by up to 2.4 m.
+      const pull = car.yield * 2.4;
+      car.x = pos.x - Math.cos(pos.heading) * pull;
+      car.z = pos.z + Math.sin(pos.heading) * pull;
       car.speed = moveSpeed;
       car.y = world.groundHeight(car.x, car.z) + 0.02;
-      car.braking = target < 1.2 || (sirensNear && car.loopSpeed < 4);
-      car.steer = 0;
+      car.braking = target < 1.2 || (sirensNear && car.loopSpeed < 4) || car.yield > 0.3;
+      car.steer = clamp((car.yield - prevYield) / Math.max(dt, 1e-3) * 0.8, -0.5, 0.5);
       void speed;
     }
     // Keep traffic separated enough to read.
@@ -242,6 +260,13 @@ export function createTraffic(world, options = {}) {
     for (const ped of pedestrians) {
       ped.panic = Math.max(0, ped.panic - dt);
       ped.phase += dt * (ped.panic > 0 ? 12 : 6);
+      if (ped.duck > 0) {
+        // Cowering in place until the shooting moves on, then they bolt.
+        ped.duck = Math.max(0, ped.duck - dt);
+        ped.speedNow = 0;
+        ped.panic = Math.max(ped.panic, 1.2);
+        continue;
+      }
       if (ped.stationary) {
         ped.y = world.groundHeight(ped.x, ped.z);
         ped.heading += Math.sin(time * 0.4 + ped.id) * dt * 0.15;

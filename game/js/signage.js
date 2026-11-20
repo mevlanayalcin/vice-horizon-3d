@@ -146,11 +146,44 @@ export function addNeonColumn(b, word, opts) {
   return (height + gap) * word.length - gap;
 }
 
+/**
+ * A theatre-style marquee: neon `text` on a dark board ringed by warm chaser bulbs, the
+ * Deco cafe and cinema sign of the Palm Strip. Takes the addNeonText options; `glow`
+ * (x, y, z, color, size, alpha) lights the board. Returns the board width.
+ */
+export function addBulbMarquee(b, text, opts, glow = null) {
+  const { x, y, z, height = 0.6, normal = [0, 1], color, bulb = [1.0, 0.86, 0.55] } = opts;
+  const nl = Math.hypot(normal[0], normal[1]) || 1;
+  const nx = normal[0] / nl, nz = normal[1] / nl;
+  const rx = nz, rz = -nx;
+  const width = measureNeonText(text, height);
+  const pad = height * 0.7;
+  const bw = width + pad * 2, bh = height + pad * 2;
+  const cy = y + height / 2;
+  b.box(x - nx * 0.1, cy, z - nz * 0.1, Math.abs(rx) * bw + Math.abs(nx) * 0.16, bh, Math.abs(rz) * bw + Math.abs(nz) * 0.16, [0.07, 0.05, 0.09], { omitBottom: true, e: 0.04 });
+  addNeonText(b, text, { x: x + nx * 0.02, y, z: z + nz * 0.02, height, normal, color, weight: 0.13 });
+  // Bulbs every ~0.32 m around the frame.
+  const step = 0.32;
+  const ring = [];
+  for (let u = -bw / 2 + 0.12; u <= bw / 2 - 0.12; u += step) ring.push([u, bh / 2 - 0.1], [u, -bh / 2 + 0.1]);
+  for (let v = -bh / 2 + 0.1 + step; v < bh / 2 - 0.1; v += step) ring.push([-bw / 2 + 0.12, v], [bw / 2 - 0.12, v]);
+  for (const [u, v] of ring) {
+    b.box(x + rx * u + nx * 0.03, cy + v, z + rz * u + nz * 0.03, 0.08, 0.08, 0.08, bulb, { e: 1, omitBottom: true });
+  }
+  if (glow) {
+    glow(x + nx * 0.6, cy, z + nz * 0.6, color, bw * 0.7, 0.45);
+    glow(x + nx * 0.5, cy + bh / 2, z + nz * 0.5, bulb, bw * 0.45, 0.3);
+  }
+  return bw;
+}
+
 /** Original names for the Strip's hotels, clubs and storefronts — no real brands. */
 export const HOTEL_NAMES = [
   'HOTEL MARISOL', 'SOL CLUB', 'CORAL PLAZA', 'THE PALOMA', 'AZUR GRAND',
   'CASA DEL MAR', 'LA BRISA', 'OCEANA', 'VISTA DORADA', 'HOTEL FLAMINGO', 'SEA BREEZE', 'MIRAMAR',
 ];
+/** The Palm Strip's pavement cafes, each under its own bulb marquee. */
+export const CAFE_NAMES = ['CAFE LUNA', 'MANGO & MINT', 'EL FARO', 'BLUE PELICAN', 'DOLCE VITA', 'TIKI 77', 'SOL Y SAL'];
 export const SHOP_NAMES = [
   'TACOS', 'SURF', 'CAFE', 'BAR', 'GELATO', 'PIZZA', 'VINYL', 'TATTOO', 'LOUNGE', 'DINER',
   'SUSHI', 'ARCADE', 'BOUTIQUE', 'JUICE', 'MOTEL', 'CASINO', 'DISCO', 'BODEGA',

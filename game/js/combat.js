@@ -62,13 +62,15 @@ export function buildCharacter(b, c, time = 0) {
     b.ellipsoid(head[0], head[1], head[2], 0.12 * k, 0.11 * k, 0.13 * k, colors.skin, { yaw, segments: 7, rings: 4 });
     return;
   }
-  const hipY = 0.94 * k + bob;
-  const headY = 1.72 * k + bob;
+  // Ducking (0..1): a bystander cowering from gunfire sinks into a crouch, knees forward.
+  const duck = clamp(c.duck ?? 0, 0, 1);
+  const hipY = (0.94 - 0.42 * duck) * k + bob;
+  const headY = (1.72 - 0.52 * duck) * k + bob;
 
   // Legs: hip, knee and ankle joints with a forward knee bend in stride.
   for (const [side, st] of [[-1, step], [1, step2]]) {
-    const hip = W(side * 0.095 * k, hipY, 0);
-    const knee = W(side * 0.1 * k, 0.5 * k, st * 0.45 + 0.04 * k);
+    const hip = W(side * 0.095 * k, hipY, -0.12 * duck * k);
+    const knee = W(side * (0.1 + 0.04 * duck) * k, (0.5 - 0.06 * duck) * k, st * 0.45 + (0.04 + 0.34 * duck) * k);
     const ankle = W(side * 0.1 * k, 0.1 * k, st);
     b.tube([hip, knee, ankle], [0.088 * k, 0.07 * k, 0.052 * k], sides, colors.pants);
     const foot = W(side * 0.1 * k, 0.055 * k, st + 0.05 * k);
@@ -187,7 +189,11 @@ export function buildCharacter(b, c, time = 0) {
   const shoulderL = W(-0.205 * k, shoulderY, 0);
   const shoulderR = W(0.205 * k, shoulderY, 0);
   const weapon = c.weapon ?? null;
-  if (c.panic) {
+  if (c.panic && duck > 0.3) {
+    // Cowering: both hands clasped over the head.
+    arm(shoulderL, W(-0.3 * k, shoulderY + 0.12, 0.14 * k), W(-0.08 * k, headY + 0.12 * k, 0.04 * k));
+    arm(shoulderR, W(0.3 * k, shoulderY + 0.12, 0.14 * k), W(0.08 * k, headY + 0.12 * k, 0.04 * k));
+  } else if (c.panic) {
     arm(shoulderL, W(-0.34 * k, shoulderY + 0.2, 0.05), W(-0.36 * k, shoulderY + 0.46, 0.08));
     arm(shoulderR, W(0.34 * k, shoulderY + 0.2, 0.05), W(0.36 * k, shoulderY + 0.46, 0.08));
   } else if (c.aiming || weapon) {

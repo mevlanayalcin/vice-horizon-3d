@@ -9,7 +9,7 @@ import {
   CITY, DISTRICTS, PALETTE, SAFEHOUSE, createRandom, rgb, shade, mix3,
 } from './config.js';
 import { MeshBuilder } from './meshkit.js';
-import { HOTEL_NAMES, SHOP_NAMES, addNeonColumn, addNeonText, measureNeonText } from './signage.js';
+import { CAFE_NAMES, HOTEL_NAMES, SHOP_NAMES, addBulbMarquee, addNeonColumn, addNeonText, measureNeonText } from './signage.js';
 
 const V = (x, y, z) => [x, y, z];
 
@@ -26,7 +26,9 @@ export function createWorld(renderer) {
   const props = [];
   const landmarks = [];
   const hydrants = [];
+  const lampposts = [];
   let hotelCount = 0;
+  let lifeguardCount = 0;
   let shopCount = 0;
 
   function builder(key) {
@@ -296,6 +298,8 @@ export function createWorld(renderer) {
     }
     addLifeguard(-90, 320, 1.05);
     addLifeguard(214, 316, 0.95);
+    addLifeguard(-322, 318, 1.0);
+    addLifeguard(396, 319, 1.0);
     addBeachBar(118, 311);
     addVolleyball(-250, 320);
     // Elaborate hotel face along the boulevard's north side.
@@ -373,6 +377,63 @@ export function createWorld(renderer) {
     }
     // A second palm row frames the Strip without closing the ocean view.
     for (let x = -414; x < 500; x += 42) addPalm(x + rng() * 3, 281.5, 1.05 + rng() * 0.3, 'street');
+    // Glass bus shelters on both pavements of Ocean Boulevard.
+    for (const x of [-330, -200, -60, 112, 206, 336]) addBusShelter(x, 240.3, 1);
+    for (const x of [-268, -134, 108, 238, 372]) addBusShelter(x, 280.2, -1);
+    // Palm Strip cafe patios: striped umbrellas, bistro tables and a bulb-lit name board.
+    CAFE_NAMES.forEach((name, i) => addCafePatio(-183 + i * 74, 235.4, name, i));
+  }
+
+  /** A lit glass bus shelter facing the road (`face` +1 looks toward +z). */
+  function addBusShelter(x, z, face) {
+    const b = builder('props');
+    const steel = rgb(0x3a3f47), glassTint = rgb(0x6fb8c8);
+    const back = z - face * 0.75;
+    b.box(x, 0.09, z, 4.8, 0.06, 1.8, PALETTE.concreteDark, { omitBottom: true });
+    for (const dx of [-2.25, 2.25]) {
+      for (const dz of [-0.75, 0.75]) b.box(x + dx, 1.3, z + dz * face, 0.1, 2.5, 0.1, steel, { omitBottom: true, s: -0.5 });
+    }
+    // Glass back wall and one glass end, a little emissive so they glow at dusk.
+    b.box(x, 1.35, back, 4.4, 2.2, 0.05, glassTint, { s: -1, e: 0.12, omitBottom: true });
+    b.box(x - 2.25, 1.35, z, 0.05, 2.2, 1.4, glassTint, { s: -1, e: 0.12, omitBottom: true });
+    // Roof canopy with a light strip underneath.
+    b.box(x, 2.62, z + face * 0.1, 5.1, 0.14, 2.1, rgb(0xe8e6df), { s: -0.4 });
+    b.box(x, 2.53, z, 4.2, 0.04, 0.22, rgb(0xfff4d8), { e: 1, omitBottom: true });
+    // A backlit advert in the open end: a sunset poster panel.
+    b.box(x + 2.25, 1.4, z, 0.12, 1.9, 1.2, rgb(0x1a1c22), { omitBottom: true });
+    b.box(x + 2.25 + face * 0, 1.75, z, 0.14, 0.9, 1.0, rgb(0xff7a52), { e: 0.9, omitBottom: true });
+    b.box(x + 2.25, 1.05, z, 0.14, 0.5, 1.0, rgb(0x6a3cc8), { e: 0.85, omitBottom: true });
+    // Bench and the route sign on the canopy fascia.
+    b.box(x - 0.4, 0.5, back + face * 0.3, 2.6, 0.08, 0.4, rgb(0x8a5a3a), { omitBottom: true });
+    addNeonText(b, 'BAY LINE', { x, y: 2.56, z: z + face * 1.17, height: 0.2, normal: [0, face], color: PALETTE.neonCyan, weight: 0.14 });
+    glow(x, 2.35, z, rgb(0xfff0d0), 3.0, 0.42);
+    glow(x + 2.25, 1.5, z + face * 0.3, rgb(0xff8a5a), 1.8, 0.4);
+    glow(x, 2.6, z + face * 1.25, PALETTE.neonCyan, 1.4, 0.35);
+    collider(x - 2.4, x + 2.4, back - 0.1, back + 0.1, 'shelter');
+  }
+
+  /** A pavement cafe: three bistro tables with chairs under striped umbrellas, and its name board. */
+  function addCafePatio(x, z, name, i) {
+    const p = builder('props');
+    const stripes = [[PALETTE.coral, PALETTE.white], [rgb(0x35c9b8), PALETTE.white], [rgb(0xffd166), rgb(0xff5d8f)]][i % 3];
+    for (let k = -1; k <= 1; k += 1) {
+      const tx = x + k * 3.2;
+      p.cylinder(tx, 0.74, z, 0.45, 0.45, 0.05, 10, PALETTE.white, { capTop: true });
+      p.box(tx, 0.38, z, 0.08, 0.74, 0.08, rgb(0x3b3b3b), { omitBottom: true });
+      for (const side of [-1, 1]) {
+        p.box(tx + side * 0.75, 0.46, z, 0.42, 0.06, 0.42, rgb(0x9a6a44), { omitBottom: true });
+        p.box(tx + side * 0.96, 0.75, z, 0.05, 0.6, 0.42, rgb(0x9a6a44), { omitBottom: true });
+      }
+      p.box(tx, 1.5, z, 0.06, 1.6, 0.06, PALETTE.white, { omitBottom: true });
+      // An eight-panel umbrella in alternating stripes.
+      for (let s = 0; s < 8; s += 1) {
+        const a0 = (s / 8) * Math.PI * 2, a1 = ((s + 1) / 8) * Math.PI * 2;
+        p.tri([tx, 2.55, z], [tx + Math.cos(a1) * 1.35, 2.15, z + Math.sin(a1) * 1.35], [tx + Math.cos(a0) * 1.35, 2.15, z + Math.sin(a0) * 1.35], stripes[s % 2], { e: 0.06 });
+      }
+      glow(tx, 2.0, z, rgb(0xffd9a0), 1.3, 0.3);
+    }
+    addBulbMarquee(p, name, { x, y: 3.2, z: z - 1.1, height: 0.5, normal: [0, 1], color: PALETTE.neonPink }, glow);
+    collider(x - 4.4, x + 4.4, z - 0.6, z + 0.6, 'cafe');
   }
 
   // -------------------------------------------------------------------------
@@ -953,15 +1014,17 @@ export function createWorld(renderer) {
     for (let x = x0; x < x1; x += gap) addPalm(x + rng() * 2, z + (rng() - 0.5) * 3, scale + rng() * 0.3, 'beach');
   }
 
+  /**
+   * A street lamp. It is drawn live by scene.js (not baked into the props mesh) so a car
+   * clipping it at speed can knock it over: the pole tilts, falls and goes dark.
+   */
   function addLamp(x, z, rot = 0) {
-    const b = builder('props');
-    const dark = rgb(0x32343a);
-    b.box(x, 2.7, z, 0.22, 5.4, 0.22, dark, { omitBottom: true });
     const armX = Math.cos(rot) * 1.15, armZ = Math.sin(rot) * 1.15;
-    b.segment([x, 5.2, z], [x + armX, 5.2, z + armZ], 0.14, 0.14, dark, {});
-    b.box(x + armX, 5.1, z + armZ, 0.7, 0.28, 0.7, PALETTE.headlight, { e: 1, omitBottom: true });
     glow(x + armX, 4.9, z + armZ, PALETTE.headlight, 4.2, 0.55);
-    collider(x - 0.25, x + 0.25, z - 0.25, z + 0.25, 'lamp');
+    const lamp = { x, z, rot, glow: glows[glows.length - 1], tilt: 0, spin: 0, fallYaw: 0, knocked: false, landed: false };
+    lampposts.push(lamp);
+    const c = { minX: x - 0.25, maxX: x + 0.25, minZ: z - 0.25, maxZ: z + 0.25, tag: 'lamp', lamp };
+    colliders.push(c);
   }
 
   function addTrafficLight(x, z, rot) {
@@ -994,17 +1057,35 @@ export function createWorld(renderer) {
     collider(x - 0.3, x + 0.3, z - 0.3, z + 0.3, 'umbrella');
   }
 
+  /** A beachfront lifeguard tower: stilts, a pastel cabin with a lit window band, a hip
+   *  roof, a deck rail, a ramp down to the sand, a flag and its number in neon. */
   function addLifeguard(x, z, scale) {
     const b = builder('palm');
-    b.box(x, 1.1, z, 3.2, 0.22, 3.2, rgb(0xe6e0cd), { omitBottom: true });
-    for (const [dx, dz] of [[-1.2, -1.2], [1.2, -1.2], [-1.2, 1.2], [1.2, 1.2]]) {
-      b.box(x + dx, 0.6, z + dz, 0.22, 1.2, 0.22, PALETTE.concrete, { omitBottom: true });
+    const n = lifeguardCount += 1;
+    const deck = rgb(0xe6e0cd), cabin = [PALETTE.coral, rgb(0x35c9b8), rgb(0xffd166), rgb(0xb98cf0)][n % 4];
+    b.box(x, 1.6, z, 3.4, 0.2, 3.4, deck, { omitBottom: true });
+    for (const [dx, dz] of [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]]) {
+      b.box(x + dx, 0.8, z + dz, 0.2, 1.6, 0.2, PALETTE.concrete, { omitBottom: true });
     }
-    b.box(x, 2.0, z, 2.6, 1.7, 2.6, PALETTE.coral, { omitBottom: true });
-    b.box(x, 2.25, z, 2.8, 0.3, 2.8, PALETTE.white, { omitBottom: true });
-    b.box(x, 3.0, z, 2.9, 0.18, 2.9, rgb(0xffb3a0), { omitBottom: true });
-    glow(x, 3.4, z, PALETTE.coral, 3, 0.25);
-    collider(x - 1.6, x + 1.6, z - 1.6, z + 1.6, 'lifeguard');
+    b.segment([x - 1.3, 0.2, z + 1.3], [x + 1.3, 1.5, z + 1.3], 0.08, 0.08, PALETTE.concrete);
+    b.box(x, 2.55, z - 0.2, 2.5, 1.7, 2.2, cabin, { omitBottom: true });
+    b.box(x, 2.75, z + 0.92, 2.2, 0.55, 0.05, rgb(0x9fd7e8), { e: 0.55, s: -1, omitBottom: true });
+    b.box(x, 3.5, z - 0.2, 2.9, 0.16, 2.7, PALETTE.white, { omitBottom: true });
+    b.cylinder(x, 3.58, z - 0.2, 1.9, 0.12, 0.55, 4, rgb(0xffb3a0), { capBottom: true });
+    // Deck rail and the ramp to the sand.
+    for (const dx of [-1.6, 1.6]) b.box(x + dx, 2.05, z + 0.4, 0.06, 0.06, 2.6, PALETTE.white, { omitBottom: true });
+    b.box(x, 2.05, z + 1.65, 3.2, 0.06, 0.06, PALETTE.white, { omitBottom: true });
+    const ramp = [];
+    for (let k = 0; k <= 1; k += 1) ramp.push([[x - 0.55, 1.6 - k * 1.58, z + 1.7 + k * 3.6], [x + 0.55, 1.6 - k * 1.58, z + 1.7 + k * 3.6]]);
+    b.surface(ramp, { color: rgb(0xc9a778) });
+    // Flag pole and pennant.
+    b.box(x + 1.45, 4.4, z - 1.3, 0.06, 2.0, 0.06, PALETTE.white, { omitBottom: true });
+    b.tri([x + 1.45, 5.35, z - 1.3], [x + 2.4, 5.1, z - 1.3], [x + 1.45, 4.85, z - 1.3], rgb(0xff3a3a), { e: 0.15 });
+    addNeonText(b, String(n), { x, y: 3.05, z: z + 0.95, height: 0.32, normal: [0, 1], color: PALETTE.white, emit: 0.9, weight: 0.16 });
+    glow(x, 2.8, z + 1.2, rgb(0xbfeaff), 2.4, 0.3);
+    glow(x, 3.9, z, cabin, 3, 0.25);
+    collider(x - 1.7, x + 1.7, z - 1.7, z + 1.7, 'lifeguard');
+    void scale;
   }
 
   function addBeachBar(x, z) {
@@ -1064,7 +1145,7 @@ export function createWorld(renderer) {
       }
       b.box(x, y + 0.6, z - 0.32, 10, 1.2, 0.14, rgb(0x2b8f86), { rotY: rot, e: 0.3, omitBottom: true });
     }
-    const slogan = { SUNSET: 'SUNSET FM 96.6', NEON: 'NEON DRIVE', PALMS: 'SOLARIS BAY' }[name] ?? name;
+    const slogan = { SUNSET: 'SUNSET FM 96.6', NEON: 'MIDNIGHT DRIVE 88.8', PALMS: 'PALM PULSE 104.2' }[name] ?? name;
     const capH = Math.min(1.25, (W * 0.84) / (measureNeonText(slogan, 1) || 1));
     addNeonText(b, slogan, { x, y: y + 4.6, z: z - 0.42, height: capH, normal: [0, -1], color: PALETTE.white, emit: 0.95, weight: 0.13 });
     glow(x, y + 2.4, z - 0.6, name === 'NEON' ? PALETTE.neonPink : PALETTE.neonCyan, 7, 0.6);
@@ -1654,6 +1735,7 @@ export function createWorld(renderer) {
   function collideCircle(x, z, radius) {
     for (const c of colliders) {
       if (c.tag === 'ramp') continue;
+      if (c.lamp && c.lamp.knocked) continue;
       const nx = Math.max(c.minX, Math.min(x, c.maxX));
       const nz = Math.max(c.minZ, Math.min(z, c.maxZ));
       const dx = x - nx, dz = z - nz;
@@ -1719,6 +1801,7 @@ export function createWorld(renderer) {
     pickups,
     props,
     hydrants,
+    lampposts,
     map,
     landmarks,
     safehouse: SAFEHOUSE,

@@ -214,7 +214,7 @@ export const VEHICLES = {
     id: 'cruiser', name: 'Patrol Cruiser', price: 0,
     length: 4.95, width: 2.05, height: 1.62, wheelBase: 2.9, wheelRadius: 0.4,
     maxSpeed: 54, accel: 17, brake: 28, grip: 6.9, steer: 1.5, mass: 1.35,
-    colors: { body: rgb(0xf1f0ea), accent: rgb(0x25252b), glass: rgb(0x141f2a), rim: rgb(0xcfd2d2) },
+    colors: { body: rgb(0xf1f0ea), accent: rgb(0x1a2748), glass: rgb(0x141f2a), rim: rgb(0xcfd2d2) },
     lights: 'cruiser', rarity: 0,
   },
 };
@@ -259,9 +259,9 @@ export function isNightEnv(env) {
 }
 
 export const RADIO = [
-  { id: 'sunset', name: 'SUNSET FM 96.6', genre: 'Coastal Synthwave' },
-  { id: 'coral', name: 'CORAL 88.1', genre: 'Sunset Lo-Fi' },
-  { id: 'neon', name: 'NEON DRIVE 101.9', genre: 'Bass Chase' },
+  { id: 'sunset', name: 'SUNSET FM 96.6', genre: 'Warm Synthwave' },
+  { id: 'palm', name: 'PALM PULSE 104.2', genre: 'Tropical House' },
+  { id: 'midnight', name: 'MIDNIGHT DRIVE 88.8', genre: 'Dark Outrun' },
 ];
 
 export const STORY = {

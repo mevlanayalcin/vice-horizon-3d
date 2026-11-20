@@ -1,16 +1,38 @@
 // progression.js — what playing earns in Solaris Bay. Respect climbs through five
-// street ranks; cash buys garage upgrades at the Safehouse Garage (engine, nitro,
-// armoured panels, street tyres) that apply to every car the player drives; and the
-// garage keeps a collection of every model the player has stolen and stored.
+// street ranks, each paying a cash milestone and unlocking paints and neon underglow;
+// cash buys garage upgrades at the Safehouse Garage (engine, nitro, armoured panels,
+// street tyres) that apply to every car the player drives; the Paint Shop resprays and
+// lights the player's ride; and the garage keeps a collection of every model stolen.
 
-import { VEHICLES } from './config.js';
+import { VEHICLES, rgb } from './config.js';
 
 export const RANKS = [
-  { name: 'Beach Rat', respect: 0 },
-  { name: 'Boulevard Hustler', respect: 300 },
-  { name: 'Strip Operator', respect: 800 },
-  { name: 'Harbor Boss', respect: 1600 },
-  { name: 'Bay Kingpin', respect: 3000 },
+  { name: 'Beach Rat', respect: 0, cash: 0, perk: 'Factory paint · no underglow' },
+  { name: 'Boulevard Hustler', respect: 300, cash: 2000, perk: 'Lagoon Teal paint · Flamingo neon' },
+  { name: 'Strip Operator', respect: 800, cash: 5000, perk: 'Solar Gold paint · Gold neon' },
+  { name: 'Harbor Boss', respect: 1600, cash: 10000, perk: 'Midnight Violet paint · Violet neon' },
+  { name: 'Bay Kingpin', respect: 3000, cash: 25000, perk: 'Pearl Chrome paint · Lime neon' },
+];
+
+/** Paint Shop resprays: free once the rank that unlocks them is reached. */
+export const PAINTS = [
+  { id: 'stock', name: 'Factory', hex: null, rank: 0 },
+  { id: 'magenta', name: 'Sunset Magenta', hex: 0xff2f86, rank: 0 },
+  { id: 'ember', name: 'Ember Orange', hex: 0xff6a2a, rank: 0 },
+  { id: 'lagoon', name: 'Lagoon Teal', hex: 0x27e2d2, rank: 1 },
+  { id: 'gold', name: 'Solar Gold', hex: 0xffc24b, rank: 2 },
+  { id: 'violet', name: 'Midnight Violet', hex: 0x5b3cc8, rank: 3 },
+  { id: 'pearl', name: 'Pearl Chrome', hex: 0xeef0f2, rank: 4 },
+];
+
+/** Neon underglow kits, lit under every car the player drives. */
+export const NEONS = [
+  { id: 'off', name: 'Off', hex: null, rank: 0 },
+  { id: 'cyan', name: 'Bay Cyan', hex: 0x39f0ff, rank: 0 },
+  { id: 'pink', name: 'Flamingo', hex: 0xff3f8e, rank: 1 },
+  { id: 'gold', name: 'Gold', hex: 0xffc24b, rank: 2 },
+  { id: 'violet', name: 'Violet', hex: 0xa36bff, rank: 3 },
+  { id: 'lime', name: 'Lime', hex: 0x7dff6a, rank: 4 },
 ];
 
 export const UPGRADES = [
@@ -33,26 +55,66 @@ export function rankFor(respect) {
 }
 
 export function createProgression({ combat, bus }) {
+  const freshStats = () => ({ stolen: 0, stunts: 0, evaded: 0, activities: 0, takedowns: 0, lamps: 0 });
   const state = {
     upgrades: { engine: 0, nitro: 0, armor: 0, grip: 0 },
     stored: [],
-    stats: { stolen: 0, stunts: 0, evaded: 0, activities: 0, takedowns: 0 },
+    stats: freshStats(),
+    paint: 'stock',
+    neon: 'off',
   };
 
   function reset() {
     state.upgrades = { engine: 0, nitro: 0, armor: 0, grip: 0 };
     state.stored = [];
-    state.stats = { stolen: 0, stunts: 0, evaded: 0, activities: 0, takedowns: 0 };
+    state.stats = freshStats();
+    state.paint = 'stock';
+    state.neon = 'off';
   }
 
-  /** Award respect; announces a promotion when it crosses into a new rank. */
+  /** Award respect; a promotion pays its milestone cash and names what it unlocked. */
   function addRespect(amount, reason = '') {
     const p = combat.player;
     const before = rankFor(p.respect).index;
     p.respect = Math.max(0, p.respect + amount);
     const after = rankFor(p.respect);
-    if (after.index > before) bus.notify?.(`PROMOTED · ${after.name.toUpperCase()}`, 'mission', 4200);
-    else if (reason && amount > 0) bus.notifyOnce?.(`+${amount} RESPECT · ${reason}`, 'cash', 2);
+    if (after.index > before) {
+      let paid = 0;
+      for (let i = before + 1; i <= after.index; i += 1) paid += RANKS[i].cash;
+      p.cash += paid;
+      bus.notify?.(`PROMOTED · ${after.name.toUpperCase()} · +$${paid.toLocaleString('en-US')}`, 'mission', 4200);
+      bus.notify?.(`UNLOCKED · ${RANKS[after.index].perk}`, 'cash', 4200);
+    } else if (reason && amount > 0) bus.notifyOnce?.(`+${amount} RESPECT · ${reason}`, 'cash', 2);
+  }
+
+  /** Is a paint or neon kit open at the player's rank? */
+  function unlocked(item) {
+    return rankFor(combat.player.respect).index >= item.rank;
+  }
+
+  /** Pick a Paint Shop colour or neon kit; returns true when it changed. */
+  function setStyle(kind, id) {
+    const list = kind === 'neon' ? NEONS : PAINTS;
+    const item = list.find((x) => x.id === id);
+    if (!item) return false;
+    if (!unlocked(item)) {
+      bus.notify?.(`Reach ${RANKS[item.rank].name.toUpperCase()} to unlock ${item.name}`, 'warn', 2200);
+      return false;
+    }
+    state[kind === 'neon' ? 'neon' : 'paint'] = id;
+    bus.notify?.(kind === 'neon' ? `UNDERGLOW · ${item.name.toUpperCase()}` : `RESPRAY · ${item.name.toUpperCase()}`, 'mission', 2000);
+    return true;
+  }
+
+  /** Paint and light a car the player drives (the factory colour is kept to undo it). */
+  function styleVehicle(car) {
+    if (!car || car.police) return car;
+    if (!car.factoryColor) car.factoryColor = car.color;
+    const paint = PAINTS.find((x) => x.id === state.paint);
+    car.color = paint?.hex != null ? rgb(paint.hex) : car.factoryColor;
+    const neon = NEONS.find((x) => x.id === state.neon);
+    car.underglow = neon?.hex != null ? rgb(neon.hex) : null;
+    return car;
   }
 
   function count(stat, n = 1) {
@@ -91,7 +153,7 @@ export function createProgression({ combat, bus }) {
     };
     car.nitroRate = 1 - u.nitro * 0.18;
     car.damageScale = 1 - u.armor * 0.18;
-    return car;
+    return styleVehicle(car);
   }
 
   /** Park a car in the Safehouse Garage: the first of each model adds to the collection. */
@@ -109,7 +171,7 @@ export function createProgression({ combat, bus }) {
   }
 
   function snapshot() {
-    return { upgrades: { ...state.upgrades }, stored: state.stored.slice(), stats: { ...state.stats } };
+    return { upgrades: { ...state.upgrades }, stored: state.stored.slice(), stats: { ...state.stats }, paint: state.paint, neon: state.neon };
   }
 
   function restore(data) {
@@ -120,10 +182,13 @@ export function createProgression({ combat, bus }) {
     }
     if (Array.isArray(data.stored)) state.stored = data.stored.filter((id) => COLLECTION.includes(id));
     if (data.stats) for (const key of Object.keys(state.stats)) state.stats[key] = Number(data.stats[key]) || 0;
+    state.paint = PAINTS.some((x) => x.id === data.paint) ? data.paint : 'stock';
+    state.neon = NEONS.some((x) => x.id === data.neon) ? data.neon : 'off';
   }
 
   return {
     state, reset, addRespect, count, upgradePrice, buyUpgrade, tuneVehicle, storeVehicle, snapshot, restore,
+    setStyle, styleVehicle, unlocked,
     get rank() { return rankFor(combat.player.respect); },
   };
 }

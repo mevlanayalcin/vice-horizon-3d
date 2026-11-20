@@ -1,14 +1,17 @@
 // citymenu.js — the in-game city menu (M / Tab): a full vector map of Solaris Bay with
-// every blip, beside tabs for the story arc, side activities, the Safehouse Garage
-// (upgrades bought with cash, the stolen-car collection) and lifetime stats. Opening it
-// pauses the city; buttons route through the HUD's data-action handler to main.js.
+// every blip, beside tabs for the story arc, side activities (medals, personal bests and
+// the live streak multiplier), the Safehouse Garage (upgrades bought with cash, the Paint
+// Shop and neon underglow selectors, the stolen-car collection) and lifetime stats with
+// the rank ladder's milestone rewards. Opening it pauses the city; buttons route through
+// the HUD's data-action handler to main.js.
 
 import { MISSIONS } from './missions.js';
-import { ACTIVITIES, STUNT_GOAL } from './activities.js';
-import { COLLECTION, RANKS, UPGRADES, rankFor } from './progression.js';
+import { ACTIVITIES, STUNT_GOAL, medalFor } from './activities.js';
+import { COLLECTION, NEONS, PAINTS, RANKS, UPGRADES, rankFor } from './progression.js';
 import { VEHICLES } from './config.js';
 
 const money = (n) => `$${Number(Math.round(n)).toLocaleString('en-US')}`;
+const hexCss = (hex) => `#${hex.toString(16).padStart(6, '0')}`;
 
 export function createCityMenu({ painter, missions, activities, progression, combat, police }) {
   const root = document.getElementById('cityMenu');
@@ -44,12 +47,37 @@ export function createCityMenu({ painter, missions, activities, progression, com
     const rows = ACTIVITIES.map((a) => {
       const best = st.best[a.id];
       const runs = st.completed[a.id] ?? 0;
-      const sub = detail ? a.blurb : best ? `Best ${best}s · ${runs} clear${runs === 1 ? '' : 's'}` : `Beat ${a.time}s`;
-      return `<li><span class="st ${runs ? 'done' : 'act'}">${a.kind === 'race' ? 'R' : a.kind === 'fare' ? 'T' : 'C'}</span><span class="nm">${a.name.toUpperCase()}<small>${sub}</small></span><span class="rw">${money(a.reward)}</span></li>`;
+      const medal = medalFor(a, best);
+      const badge = medal ? `<i class="cm-medal ${medal.id}">${medal.name}</i>` : '';
+      const pb = best ? `<i class="cm-pb">PB ${best}s</i>` : '';
+      const sub = detail ? `${a.blurb}<br>Par ${a.time}s · gold ≤ ${Math.floor(a.time * 0.72)}s` : best ? `${runs} clear${runs === 1 ? '' : 's'}` : `Beat ${a.time}s`;
+      return `<li><span class="st ${runs ? 'done' : 'act'}">${a.kind === 'race' ? 'R' : a.kind === 'fare' ? 'T' : 'C'}</span><span class="nm">${a.name.toUpperCase()}${badge}${pb}<small>${sub}</small></span><span class="rw">${money(a.reward)}</span></li>`;
     });
     const stunts = progression.state.stats.stunts ?? 0;
     rows.push(`<li><span class="st ${stunts >= STUNT_GOAL ? 'done' : 'act'}">S</span><span class="nm">STUNT RAMPS<small>${Math.min(stunts, STUNT_GOAL)} / ${STUNT_GOAL} jumps landed · +$150 each</small></span><span class="rw">${money(STUNT_GOAL * 150)}</span></li>`);
     return rows.join('');
+  }
+
+  /** The live streak multiplier badge for the activities header. */
+  function streakBadge() {
+    const st = activities.state;
+    const mult = activities.multiplier ?? 1;
+    return `<em class="${st.streak ? 'cm-hot' : ''}">STREAK ${st.streak} · x${mult.toFixed(2)}</em>`;
+  }
+
+  /** Paint Shop and underglow selectors: swatches for every colour, locked ones by rank. */
+  function paintShop() {
+    const s = progression.state;
+    const swatch = (kind, item, current) => {
+      const open = progression.unlocked(item);
+      const fill = item.hex == null ? (kind === 'neon' ? 'transparent' : 'linear-gradient(135deg,#888,#eee)') : hexCss(item.hex);
+      const glow = kind === 'neon' && item.hex != null ? `box-shadow:0 0 9px ${hexCss(item.hex)};` : '';
+      return `<button class="cm-swatch${current === item.id ? ' on' : ''}${open ? '' : ' locked'}" data-action="${kind === 'neon' ? 'setNeon' : 'setPaint'}" data-style="${item.id}" title="${item.name}${open ? '' : ` · ${RANKS[item.rank].name}`}"><i style="background:${fill};${glow}"></i><b>${item.name.toUpperCase()}</b>${open ? '' : `<u>RANK ${item.rank + 1}</u>`}</button>`;
+    };
+    return `<div class="cm-card"><h4>PAINT SHOP<em>${(PAINTS.find((p) => p.id === s.paint)?.name ?? 'Factory').toUpperCase()}</em></h4>
+      <div class="cm-swatches">${PAINTS.map((p) => swatch('paint', p, s.paint)).join('')}</div>
+      <h4 style="margin-top:7px">NEON UNDERGLOW<em>${(NEONS.find((n) => n.id === s.neon)?.name ?? 'Off').toUpperCase()}</em></h4>
+      <div class="cm-swatches">${NEONS.map((n) => swatch('neon', n, s.neon)).join('')}</div></div>`;
   }
 
   function garageSummary() {
@@ -71,6 +99,7 @@ export function createCityMenu({ painter, missions, activities, progression, com
     }).join('');
     const cars = COLLECTION.map((id) => `<span class="${progression.state.stored.includes(id) ? 'on' : ''}">${VEHICLES[id].name.toUpperCase()}</span>`).join('');
     return `<div class="cm-card"><h4>SAFEHOUSE GARAGE · UPGRADES<em>APPLY TO EVERY CAR</em></h4><ul class="cm-list">${rows}</ul></div>
+      ${paintShop()}
       <div class="cm-card"><h4>COLLECTION<em>${progression.state.stored.length} / ${COLLECTION.length}</em></h4><div class="cm-cars">${cars}</div>
       <div class="cm-rank-next" style="margin-top:8px">Drive a stolen car into the Safehouse Garage (G on the map) to store it · +$1,200 per new model.</div></div>`;
   }
@@ -81,17 +110,18 @@ export function createCityMenu({ painter, missions, activities, progression, com
     const rows = [
       ['Cash', money(p.cash)], ['Respect', `${p.respect} RP`], ['Story', `${missions.progress} / ${MISSIONS.length}`],
       ['Peak heat', `★ ${Math.max(police.peak, police.wanted)}`], ['Cars stolen', st.stolen], ['Stunt jumps', st.stunts],
-      ['Side activities', st.activities], ['Heat evaded', st.evaded], ['Takedowns', st.takedowns], ['Cars stored', progression.state.stored.length],
+      ['Side activities', st.activities], ['Best streak', `x${(1 + Math.min(4, activities.state.bestStreak ?? 0) * 0.25).toFixed(2)}`], ['Heat evaded', st.evaded], ['Takedowns', st.takedowns],
+      ['Lamps flattened', st.lamps ?? 0], ['Cars stored', progression.state.stored.length],
     ].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
-    const ladder = RANKS.map((r, i) => `<li><span class="st ${p.respect >= r.respect ? 'done' : 'locked'}">${i + 1}</span><span class="nm">${r.name.toUpperCase()}</span><span class="rw">${r.respect} RP</span></li>`).join('');
-    return `${rankCard()}<div class="cm-card"><h4>CAREER</h4><div class="cm-stats">${rows}</div></div><div class="cm-card"><h4>STREET RANKS</h4><ul class="cm-list">${ladder}</ul></div>`;
+    const ladder = RANKS.map((r, i) => `<li><span class="st ${p.respect >= r.respect ? 'done' : 'locked'}">${i + 1}</span><span class="nm">${r.name.toUpperCase()}<small>${i ? `+${money(r.cash)} · ${r.perk}` : r.perk}</small></span><span class="rw">${r.respect} RP</span></li>`).join('');
+    return `${rankCard()}<div class="cm-card"><h4>CAREER</h4><div class="cm-stats">${rows}</div></div><div class="cm-card"><h4>STREET RANKS<em>MILESTONE REWARDS</em></h4><ul class="cm-list">${ladder}</ul></div>`;
   }
 
   function renderSide() {
     if (tab === 'story') {
       side.innerHTML = `<div class="cm-card"><h4>THE SOLARIS BAY JOB<em>${missions.progress} / ${MISSIONS.length}</em></h4><ul class="cm-list">${storyRows(true)}</ul></div>`;
     } else if (tab === 'activities') {
-      side.innerHTML = `<div class="cm-card"><h4>SIDE ACTIVITIES<em>CYAN RINGS</em></h4><ul class="cm-list">${activityRows(true)}</ul></div>`;
+      side.innerHTML = `<div class="cm-card"><h4>SIDE ACTIVITIES${streakBadge()}</h4><ul class="cm-list">${activityRows(true)}</ul></div>`;
     } else if (tab === 'garage') {
       side.innerHTML = garageDetail();
     } else if (tab === 'stats') {
@@ -99,8 +129,8 @@ export function createCityMenu({ painter, missions, activities, progression, com
     } else {
       side.innerHTML = `${rankCard()}
         <div class="cm-card"><h4>STORY<em>${missions.progress} / ${MISSIONS.length} JOBS</em></h4><ul class="cm-list">${storyRows(false)}</ul></div>
-        <div class="cm-card"><h4>ACTIVITIES</h4><ul class="cm-list">${activityRows(false)}</ul></div>
-        <div class="cm-card"><h4>GARAGE<em>${progression.state.stored.length} / ${COLLECTION.length} CARS</em></h4>${garageSummary()}</div>`;
+        <div class="cm-card"><h4>ACTIVITIES${streakBadge()}</h4><ul class="cm-list">${activityRows(false)}</ul></div>
+        <div class="cm-card"><h4>GARAGE<em>${progression.state.stored.length} / ${COLLECTION.length} CARS · ${(PAINTS.find((p) => p.id === progression.state.paint)?.name ?? 'Factory').toUpperCase()} · ${(NEONS.find((n) => n.id === progression.state.neon)?.name ?? 'Off').toUpperCase()} GLOW</em></h4>${garageSummary()}</div>`;
     }
     [...tabs.children].forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   }

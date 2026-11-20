@@ -311,6 +311,19 @@ export class MeshBuilder {
     }
     const colorAt = opts.colorAt ? (i) => opts.colorAt(i) : null;
     this.surface(rows, { wrap: true, axis: path, color, colorAt, e: opts.e ?? 0, s: opts.s ?? 0 });
+    // Optional flat caps close the open ends (push-bar tubes, exhaust tips, mirror stalks).
+    if (opts.capEnds) {
+      const capColor = opts.capColor ?? color;
+      for (const [i, sign] of [[0, -1], [n - 1, 1]]) {
+        if (radii[i] <= 0) continue;
+        const t = tangents[i], ring = rows[i], c = path[i];
+        const nrm = [t[0] * sign, t[1] * sign, t[2] * sign];
+        for (let k = 0; k < sides; k += 1) {
+          const a = ring[k], b = ring[(k + 1) % sides];
+          this.tri(c, sign > 0 ? a : b, sign > 0 ? b : a, capColor, { n: nrm, e: opts.capE ?? opts.e ?? 0, s: opts.s ?? 0 });
+        }
+      }
+    }
   }
 
   /**

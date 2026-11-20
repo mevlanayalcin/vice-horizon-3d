@@ -438,7 +438,7 @@ export function createHud({ onAction, world }) {
     if (act) {
       setText(els.activityCode, act.code);
       setText(els.activityName, act.name.toUpperCase());
-      setText(els.activityCp, `CP ${Math.min(act.total, act.step + 1)} / ${act.total}`);
+      setText(els.activityCp, `CP ${Math.min(act.total, act.step + 1)} / ${act.total}${act.streak > 1 ? ` · x${act.streak.toFixed(2)}` : ''}${act.best ? ` · PB ${act.best}s` : ''}`);
       const t = Math.max(0, act.timer);
       setText(els.activityTimer, `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`);
     }

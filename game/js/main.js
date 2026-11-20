@@ -60,7 +60,7 @@ const bus = {
   },
   onSirenLevel: (dist) => { sirenDistance = dist; },
   onGunshot: (kind) => {
-    traffic.panicAt(combat.player.x, combat.player.z, 40);
+    traffic.panicAt(combat.player.x, combat.player.z, 40, { gunfire: true });
     if (police.wanted === 0) police.raise(1, 'Shots fired');
     else if (police.wanted < 3 && Math.random() < 0.12) police.raise(1, 'Shots fired');
   },
@@ -151,6 +151,7 @@ let mode = isShot ? 'shot' : 'title';
 let playTime = 0;
 let elapsed = 0;
 let sirenDistance = Infinity;
+let chaseScare = 0;
 let mouseDown = false;
 let aimDown = false;
 let moduleReady = false;
@@ -403,6 +404,15 @@ function handleAction(action, data) {
     case 'closeMenu': closeCityMenu(); break;
     case 'buyUpgrade':
       if (progression.buyUpgrade(data.upgrade) && currentVehicle) progression.tuneVehicle(currentVehicle);
+      cityMenu.render(liveMapState());
+      break;
+    case 'setPaint':
+    case 'setNeon':
+      // Paint Shop / underglow: restyle the current car live and keep the choice in the autosave.
+      if (progression.setStyle(action === 'setNeon' ? 'neon' : 'paint', data.style)) {
+        if (currentVehicle) progression.styleVehicle(currentVehicle);
+        if (!isShot) save.write('auto', snapshot(game));
+      }
       cityMenu.render(liveMapState());
       break;
     case 'toggleSound':
@@ -702,9 +712,60 @@ function updateHydrants(dt) {
   }
 }
 
+/**
+ * Street lamps: a car clipping one at speed knocks it over. The pole pivots on its base in
+ * the car's direction of travel, sparks burst where it shears, the lamp goes dark and a
+ * second shower of sparks and a clang follow when the head hits the road.
+ */
+function updateLamps(dt) {
+  const car = currentVehicle;
+  for (const lamp of world.lampposts) {
+    if (!lamp.knocked) {
+      if (!car || Math.abs(car.speed) < 6) continue;
+      const dx = lamp.x - car.x, dz = lamp.z - car.z;
+      if (dx * dx + dz * dz > 2.1 * 2.1) continue;
+      lamp.knocked = true;
+      lamp.fallYaw = Math.atan2(car.velocityX, car.velocityZ) + (Math.random() - 0.5) * 0.5;
+      lamp.spin = 0.9 + Math.abs(car.speed) * 0.05;
+      lamp.glow.alpha = 0;
+      car.speed *= 0.86;
+      car.velocityX *= 0.86;
+      car.velocityZ *= 0.86;
+      car.health = Math.max(1, car.health - 4 * (car.damageScale ?? 1));
+      lampSparks(lamp.x, 0.6, lamp.z, 18);
+      progression.count('lamps');
+      if (audio.ready) { audio.playCrash(0.7); audio.playClang(); }
+      bus.notifyOnce('LAMPPOST DOWN', 'info', 6);
+      continue;
+    }
+    if (lamp.landed) continue;
+    // Topple: the pole accelerates as it leans, like a falling rod.
+    lamp.spin += 2.9 * Math.sin(Math.max(0.05, lamp.tilt)) * dt * 1.6;
+    lamp.tilt += lamp.spin * dt;
+    if (lamp.tilt >= 1.5) {
+      lamp.tilt = 1.5;
+      lamp.landed = true;
+      const hx = lamp.x + Math.sin(lamp.fallYaw) * 5.2, hz = lamp.z + Math.cos(lamp.fallYaw) * 5.2;
+      lampSparks(hx, 0.3, hz, 14);
+      if (audio.ready) audio.playClang(0.6);
+    }
+  }
+}
+
+function lampSparks(x, y, z, count) {
+  for (let i = 0; i < count; i += 1) {
+    const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 5;
+    combat.particles.push({
+      x, y, z, vx: Math.cos(a) * s, vy: 2 + Math.random() * 4, vz: Math.sin(a) * s,
+      life: 0.5 + Math.random() * 0.4, maxLife: 0.9, color: i % 3 ? [1, 0.82, 0.4] : [1, 1, 0.85], size: 0.14 + Math.random() * 0.1, gravity: 14,
+    });
+  }
+}
+
 function updateGame(dt) {
   tickTyreFx(dt);
   updateHydrants(dt);
+  updateLamps(dt);
   game.playTime += dt;
   playTime += dt;
   game.hour = (game.hour + dt * 0.0085) % 24;
@@ -805,7 +866,14 @@ function updateGame(dt) {
   pressedKeys.clear();
 
   police.update(dt, combat.player, currentVehicle);
-  traffic.update(dt, combat.player, currentVehicle, police.wanted > 0 && sirenDistance < 90);
+  const sirens = police.allCars().filter((c) => c.sirenOn && !c.wrecked);
+  traffic.update(dt, combat.player, currentVehicle, police.wanted > 0 && sirenDistance < 90, sirens);
+  // A three-star chase tearing down the street scatters the pavements as it passes.
+  chaseScare -= dt;
+  if (currentVehicle && police.wanted >= 3 && Math.abs(currentVehicle.speed) > 10 && chaseScare <= 0) {
+    chaseScare = 0.6;
+    traffic.panicAt(currentVehicle.x, currentVehicle.z, 24);
+  }
 
   // Pickups & tokens.
   for (const token of tokens) {
@@ -863,11 +931,30 @@ function updateGame(dt) {
   updateCamera(dt);
   const env = getEnv();
   const moving = Math.hypot(combat.player.velocityX, combat.player.velocityZ);
+  // The nearest wailing cruiser, heard from the camera: bearing for the stereo pan and
+  // closing speed for the Doppler shift.
+  let sirenPan = 0, sirenClosing = 0, sirenBest = Infinity;
+  const lx = camera.pos[0], lz = camera.pos[2];
+  const camYaw = Math.atan2(camera.target[0] - lx, camera.target[2] - lz);
+  for (const cop of sirens) {
+    const dx = cop.x - lx, dz = cop.z - lz;
+    const d = Math.hypot(dx, dz);
+    if (d >= sirenBest || d < 0.01) continue;
+    sirenBest = d;
+    const rel = Math.atan2(dx, dz) - camYaw;
+    sirenPan = -Math.sin(rel);
+    const lvx = currentVehicle?.velocityX ?? 0, lvz = currentVehicle?.velocityZ ?? 0;
+    const cvx = Math.sin(cop.heading) * (cop.speed ?? 0), cvz = Math.cos(cop.heading) * (cop.speed ?? 0);
+    sirenClosing = -((cvx - lvx) * dx + (cvz - lvz) * dz) / d;
+  }
   audio.update(dt, {
     inVehicle: currentVehicle,
-    throttle: driving ? 1 : 0,
+    throttle: driving ? ((keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0)) : 0,
+    handbrake: driving && keys.has('Space'),
     drifting: currentVehicle?.drift ?? 0,
     sirenDist: sirenDistance,
+    sirenPan,
+    sirenClosing,
     wanted: police.wanted,
   });
   hud.update({
@@ -1066,6 +1153,19 @@ window.__solaris = {
       menuOpen: cityMenu.open,
       helicopter: !!police.helicopter,
       police: police.allCars().length,
+      paint: progression.state.paint,
+      neon: progression.state.neon,
+      carColor: currentVehicle?.color ? Array.from(currentVehicle.color) : null,
+      underglow: currentVehicle?.underglow ? Array.from(currentVehicle.underglow) : null,
+      radio: audio.currentStation()?.name ?? null,
+      audioReady: audio.ready,
+      gear: audio.gear,
+      lampsDown: world.lampposts.filter((l) => l.knocked).length,
+      hydrantsBroken: world.hydrants.filter((h) => h.broken).length,
+      streak: activities.state.streak,
+      cowering: traffic.pedestrians.filter((ped) => ped.duck > 0).length,
+      fleeing: traffic.pedestrians.filter((ped) => ped.panic > 0).length,
+      yielding: traffic.cars.filter((c) => (c.yield ?? 0) > 0.2).length,
     };
   },
   openMenu(tab = 'map') { openCityMenu(tab); },

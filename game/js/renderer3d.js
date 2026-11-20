@@ -252,6 +252,11 @@ void main() {
     float k = mix((0.05 + 0.95 * fres) * gloss * 0.9 + 0.06, 0.16 + 0.84 * fres, glass);
     base = mix(base, env, clamp(k, 0.0, 0.92));
     base += uSunColor * pow(max(dot(N, H), 0.0), 260.0) * 3.2 * gloss * (1.0 - uNight * 0.6);
+    // Clearcoat on car paint: a broad soft sheen under the sharp highlight, and a cool
+    // sky-tinted rim where the panels turn away, so curved bodywork reads as lacquer.
+    float coat = smoothstep(0.78, 0.84, gloss) * (1.0 - glass);
+    base += uSunColor * pow(max(dot(N, H), 0.0), 48.0) * 0.22 * coat * (1.0 - uNight * 0.5);
+    base += env * fres * fres * 0.28 * coat;
   }
 
   // Wet streets: the planar reflection of the city on rain-washed asphalt and stone.
