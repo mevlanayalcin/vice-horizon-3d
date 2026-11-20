@@ -66,6 +66,7 @@ export const DISTRICTS = [
   { id: 'harbor', name: 'Harbor Docks', color: '#57d8d0', x: -360, z: -180, blurb: 'Containers, cranes and quiet money' },
   { id: 'marina', name: 'Marina Causeway', color: '#5cc8ff', x: 330, z: 170, blurb: 'Bridges to the yachts, glass on the water' },
   { id: 'hills', name: 'Casa Hills', color: '#9ee06a', x: 130, z: -392, blurb: 'Pastel houses stacked against the hillside' },
+  { id: 'key', name: 'Starlight Key', color: '#ffe08a', x: 654, z: 112, blurb: 'An island marina of yachts, palms and private slips' },
 ];
 
 // ---------------------------------------------------------------------------

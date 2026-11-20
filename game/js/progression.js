@@ -2,7 +2,8 @@
 // street ranks, each paying a cash milestone and unlocking paints and neon underglow;
 // cash buys garage upgrades at the Safehouse Garage (engine, nitro, armoured panels,
 // street tyres) that apply to every car the player drives; the Paint Shop resprays and
-// lights the player's ride; and the garage keeps a collection of every model stolen.
+// lights the player's ride; the garage keeps a collection of every model stolen; and
+// district standing (turf.js) knocks up to 25% off every garage upgrade.
 
 import { VEHICLES, rgb } from './config.js';
 
@@ -54,7 +55,7 @@ export function rankFor(respect) {
   return { index, name: RANKS[index].name, next, progress: next ? Math.min(1, (respect - floor) / span) : 1 };
 }
 
-export function createProgression({ combat, bus }) {
+export function createProgression({ combat, bus, turf = null }) {
   const freshStats = () => ({ stolen: 0, stunts: 0, evaded: 0, activities: 0, takedowns: 0, lamps: 0 });
   const state = {
     upgrades: { engine: 0, nitro: 0, armor: 0, grip: 0 },
@@ -124,7 +125,11 @@ export function createProgression({ combat, bus }) {
   function upgradePrice(id) {
     const def = UPGRADES.find((u) => u.id === id);
     if (!def) return null;
-    return def.prices[state.upgrades[id]] ?? null;
+    const base = def.prices[state.upgrades[id]];
+    if (base == null) return null;
+    // District standing earns a garage discount (5% per district at RESPECTED or better).
+    const off = turf?.discount() ?? 0;
+    return Math.round((base * (1 - off)) / 50) * 50;
   }
 
   /** Buy the next stage of an upgrade; returns true when the cash changed hands. */

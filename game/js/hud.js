@@ -1,8 +1,9 @@
 // hud.js — the whole overlay in four dark-glass corner clusters: the vector minimap
 // and vitals (bottom-left), heat stars, cash, respect rank and weapon rail with
 // hand-drawn SVG icons (top-right), district, radio and speedometer (bottom-right), the
-// mission card and activity timer (top-centre), plus dialogue, toasts, prompts and the
-// title, manual, pause/save and story-complete screens. DOM + the minimap canvas.
+// mission card and activity timer (top-centre), the crew strip over the minimap, the SBPD
+// dispatch card (top-left), the cover chip, plus dialogue, toasts, prompts and the title,
+// manual, pause/save, load-slot and story-complete screens. DOM + the minimap canvas.
 
 import { kmh } from './config.js';
 import { createMapPainter } from './minimap.js';
@@ -108,11 +109,23 @@ export function createHud({ onAction, world }) {
     activityName: byId('activityName'),
     activityCp: byId('activityCp'),
     activityTimer: byId('activityTimer'),
+    dispatch: byId('dispatchCard'),
+    dispatchTitle: byId('dispatchTitle'),
+    dispatchText: byId('dispatchText'),
+    crewBadge: byId('crewBadge'),
+    coverChip: byId('coverChip'),
+    coverText: byId('coverText'),
+    slotsScreen: byId('slotsScreen'),
+    titleSlots: byId('titleSlots'),
+    loadMenuBtn: byId('loadMenuBtn'),
+    loadMenuMeta: byId('loadMenuMeta'),
   };
   const painter = createMapPainter(world);
   let bannerTimeout = 0;
   let dialogueTimeout = 0;
   let popupTimeout = 0;
+  let dispatchTimeout = 0;
+  let lastCrewKey = null;
   let lastWeapon = '';
   let lastAmmoText = '';
   let lastStars = -1;
@@ -143,7 +156,8 @@ export function createHud({ onAction, world }) {
 
   // ------------------------------------------------------------------ title
   function setTitle(info = {}) {
-    setText(els.titleProgress, `${info.progress ?? 0} / 5`);
+    const total = info.total ?? 8;
+    setText(els.titleProgress, `${info.progress ?? 0} / ${total}`);
     setText(els.titleCash, `$${money(info.cash ?? 640)}`);
     setText(els.titleTokens, `${info.tokens ?? 0} / 12`);
     setText(els.titlePeak, `★ ${info.peak ?? 0}`);
@@ -151,7 +165,8 @@ export function createHud({ onAction, world }) {
       els.continueBtn.disabled = !info.hasSave;
       setText(els.continueMeta, info.hasSave ? info.saveLabel ?? 'LATEST SAVE' : 'NO SAVE FOUND');
     }
-    if (info.storyComplete) setText(els.titleProgress, '5 / 5');
+    if (els.loadMenuMeta) setText(els.loadMenuMeta, `${info.slotsUsed ?? 0} / 4 SLOTS USED`);
+    if (info.storyComplete) setText(els.titleProgress, `${total} / ${total}`);
   }
 
   function showTitle(show = true) {
@@ -159,6 +174,7 @@ export function createHud({ onAction, world }) {
     els.hud.classList.toggle('hidden', show);
     els.controls.classList.add('hidden');
     els.pause.classList.add('hidden');
+    if (!show) els.slotsScreen?.classList.add('hidden');
   }
 
   function showControls(show = true) {
@@ -168,6 +184,25 @@ export function createHud({ onAction, world }) {
   function showPause(show = true) {
     els.pause.classList.toggle('hidden', !show);
     if (!show) els.controls.classList.add('hidden');
+  }
+
+  /** One slot card: name, district, progress, cash, crew and timestamp, with a delete key. */
+  function slotCard(slot, action, options = {}) {
+    const card = document.createElement('div');
+    card.className = `slot${slot.exists ? '' : ' empty'}`;
+    card.dataset.action = action;
+    card.dataset.slot = slot.slot;
+    card.setAttribute('role', 'button');
+    const tag = !slot.exists ? 'EMPTY' : action === 'saveSlot' ? 'OVERWRITE' : 'LOAD';
+    const crew = slot.crew?.length ? slot.crew.map((id) => `<i class="slot-crew">${id[0].toUpperCase()}</i>`).join('') : '';
+    const meta = slot.exists
+      ? `<span class="slot-title">${slot.name || 'Solaris Bay'}</span>
+         <span class="slot-meta">${slot.district} · ${slot.progress}/${slot.total} jobs${slot.storyComplete ? ' · COMPLETE' : ''} · $${money(slot.cash)}</span>
+         <span class="slot-meta slot-time">${crew}<span>${options.time?.(slot.savedAt) ?? ''}</span></span>`
+      : `<span class="slot-meta">${action === 'saveSlot' ? 'Click to write this slot' : 'Nothing saved here'}</span>`;
+    const del = slot.exists && options.deletable ? `<button class="slot-del" data-action="deleteSlot" data-slot="${slot.slot}" aria-label="Delete ${slot.label}">✕</button>` : '';
+    card.innerHTML = `<div class="slot-name">${slot.label}<em>${tag}</em></div>${meta}${del}`;
+    return card;
   }
 
   function refreshSlots(slots, info = {}) {
@@ -182,20 +217,42 @@ export function createHud({ onAction, world }) {
         target.appendChild(empty);
         return;
       }
-      for (const slot of chosen) {
-        const button = document.createElement('button');
-        button.className = `slot${slot.exists ? '' : ' empty'}`;
-        button.dataset.action = mode === 'save' ? 'saveSlot' : 'loadSlot';
-        button.dataset.slot = slot.slot;
-        button.innerHTML = `<div class="slot-name">${slot.label}${slot.exists ? '<em>READY</em>' : '<em>EMPTY</em>'}</div>
-          <span class="slot-meta">${slot.exists ? `$${money(slot.cash)} · ${slot.progress}/5 missions${slot.storyComplete ? ' · COMPLETE' : ''}` : 'Click to write this slot'}</span>`;
-        target.appendChild(button);
-      }
+      for (const slot of chosen) target.appendChild(slotCard(slot, mode === 'save' ? 'saveSlot' : 'loadSlot', { time: info.time, deletable: mode === 'save' }));
     };
     render(els.saveSlots, 'save');
     render(els.loadSlots, 'load');
     if (info.cash !== undefined) setText(els.pauseCash, `$${money(info.cash)}`);
     if (info.subtitle) setText(els.pauseSub, info.subtitle);
+  }
+
+  /** The title screen's LOAD GAME list: every slot, loadable and deletable. */
+  function showSlots(show, slots = [], info = {}) {
+    if (!els.slotsScreen) return;
+    els.slotsScreen.classList.toggle('hidden', !show);
+    if (!show) return;
+    els.titleSlots.innerHTML = '';
+    for (const slot of slots) els.titleSlots.appendChild(slotCard(slot, 'loadSlot', { time: info.time, deletable: true }));
+  }
+
+  /** SBPD radio chatter: a tactical dispatch card top-left with a live waveform. */
+  function dispatch(title, text, duration = 5200) {
+    if (!els.dispatch) return;
+    setText(els.dispatchTitle, title);
+    setText(els.dispatchText, text);
+    els.dispatch.classList.add('show');
+    clearTimeout(dispatchTimeout);
+    if (duration > 0) dispatchTimeout = setTimeout(() => els.dispatch.classList.remove('show'), duration);
+  }
+
+  /** The crew strip over the minimap: one chip per recruited crewmate with live status. */
+  function updateCrew(roster) {
+    if (!els.crewBadge) return;
+    const shown = (roster ?? []).filter((c) => c.recruited);
+    const key = shown.map((c) => `${c.id}:${c.active}:${c.status}`).join('|');
+    if (key === lastCrewKey) return;
+    lastCrewKey = key;
+    els.crewBadge.classList.toggle('hidden', !shown.length);
+    els.crewBadge.innerHTML = `<span class="crew-tag">CREW</span>${shown.map((c) => `<span class="crew-chip${c.active ? '' : ' off'}" style="--c:${c.color}"><b>${c.initial}</b><span><em>${c.name.split(' ')[0].toUpperCase()}</em>${c.status}</span></span>`).join('')}`;
   }
 
   function setSoundLabel(on) {
@@ -205,7 +262,7 @@ export function createHud({ onAction, world }) {
   function showStoryComplete(stats) {
     els.story.classList.remove('hidden');
     els.storyStats.innerHTML = `
-      <div class="stat"><span class="stat-label">MISSIONS</span><span class="stat-value">5 / 5</span></div>
+      <div class="stat"><span class="stat-label">MISSIONS</span><span class="stat-value">${stats.total ?? 8} / ${stats.total ?? 8}</span></div>
       <div class="stat"><span class="stat-label">CASH</span><span class="stat-value gold">$${money(stats.cash)}</span></div>
       <div class="stat"><span class="stat-label">RESPECT</span><span class="stat-value">${stats.respect}</span></div>
       <div class="stat"><span class="stat-label">PEAK HEAT</span><span class="stat-value">★ ${stats.peak}</span></div>
@@ -420,11 +477,17 @@ export function createHud({ onAction, world }) {
     } else {
       els.speedo.classList.add('hidden');
       els.speedLines.classList.remove('boosting');
-      setHint('WASD MOVE · SHIFT SPRINT · SPACE JUMP · LMB FIRE · 1-4 WEAPON · E / F VEHICLE · R RADIO · ESC PAUSE');
+      setHint(player.cover ? 'WASD SHUFFLE · RMB / LMB PEEK & FIRE · Q / C LEAVE COVER · T CREW · ESC PAUSE' : 'WASD MOVE · SHIFT SPRINT · LMB FIRE · Q / C COVER · 1-4 WEAPON · E / F VEHICLE · T CREW · ESC PAUSE');
     }
 
     // Prompt.
     setPrompt(prompt);
+
+    // Crew strip and the cover chip.
+    updateCrew(state.crew);
+    const cover = !vehicle && !player.dead ? player.cover : null;
+    els.coverChip?.classList.toggle('show', !!cover);
+    if (cover) setText(els.coverText, `${(player.peek ?? 0) > 0.5 ? 'PEEKING' : 'IN COVER'} · ${String(cover.name).toUpperCase()}`);
 
     // Respect rank under the cash counter.
     const rank = rankFor(player.respect ?? 0);
@@ -446,6 +509,7 @@ export function createHud({ onAction, world }) {
     painter.drawMinimap(els.minimap, {
       player, vehicle, wanted, policeCars, trafficCars, parkedCars, waypoint,
       helicopter: state.helicopter, activityStarts: state.activityStarts, checkpoints: state.checkpoints,
+      roadblocks: state.roadblocks, turf: state.turf,
     });
     void missionProgress; void tokens; void evasion; void targetVehicle; void district; void mission;
   }
@@ -465,6 +529,8 @@ export function createHud({ onAction, world }) {
     showTitle,
     showControls,
     showPause,
+    showSlots,
+    dispatch,
     refreshSlots,
     setSoundLabel,
     showStoryComplete,

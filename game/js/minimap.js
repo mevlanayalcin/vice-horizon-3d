@@ -3,9 +3,11 @@
 // with casings and lane dashes) at any zoom, then layers the live blips: GPS route,
 // mission and activity markers, safehouse garage, traffic, pulsing police vision cones,
 // the helicopter's searchlight and the player arrow. It feeds both the HUD minimap and
-// the full-screen city map in the pause menu.
+// the full-screen city map in the pause menu. District standing (turf.js) tints each
+// district's zone by how much of it the crew runs.
 
 import { DISTRICTS, SAFEHOUSE, CITY } from './config.js';
+import { TURF } from './turf.js';
 
 const COLORS = {
   water: '#127186',
@@ -35,9 +37,8 @@ const DISTRICT_ZONES = [
   { id: 'hills', x0: -440, x1: 520, z0: -470, z1: -320, color: '158, 224, 106' },
 ];
 
-/** Map-only place names beside the six districts. */
+/** Map-only place names beside the seven districts. */
 const PLACE_LABELS = [
-  { name: 'Starlight Key', color: '#ffe08a', x: 654, z: 112 },
   { name: 'Sunset Beach', color: '#ffd29a', x: 210, z: 322 },
   { name: 'Solaris Bay', color: 'rgba(170, 240, 255, 0.5)', x: 300, z: 425, big: true },
 ];
@@ -307,8 +308,39 @@ export function createMapPainter(world) {
     return [[px, pz], [sx, pz], [sx, tzr], [tx, tzr], [tx, tz]];
   }
 
+  /**
+   * District control tint: each turf district washes its zone in its colour, stronger with
+   * standing, and a district at RESPECTED (50%) or better gets a solid lit border.
+   */
+  function drawTurf(g, v, standing) {
+    for (const d of TURF) {
+      const value = standing[d.id] ?? 0;
+      if (value <= 0) continue;
+      const k = Math.min(1, value / 100);
+      g.save();
+      g.fillStyle = `rgba(${d.rgb}, ${0.04 + k * 0.2})`;
+      g.strokeStyle = `rgba(${d.rgb}, ${0.25 + k * 0.6})`;
+      g.lineWidth = Math.max(1.5, v.scale * (value >= 50 ? 2.6 : 1.2));
+      if (value >= 50) { g.shadowColor = d.color; g.shadowBlur = 10; }
+      if (d.id === 'key') {
+        islandPath(g, v, 2);
+        g.fill();
+        if (value >= 50) g.stroke();
+      } else {
+        const zone = DISTRICT_ZONES.find((z) => z.id === d.id);
+        if (zone) {
+          const x = v.x(zone.x0), y = v.y(zone.z0), w = (zone.x1 - zone.x0) * v.scale, h = (zone.z1 - zone.z0) * v.scale;
+          g.fillRect(x, y, w, h);
+          if (value >= 50) g.strokeRect(x, y, w, h);
+        }
+      }
+      g.restore();
+    }
+  }
+
   /** Live blips over the base map. */
   function drawLive(g, v, s) {
+    if (s.turf) drawTurf(g, v, s.turf);
     const now = performance.now();
     const flash = Math.floor(now / 230) % 2;
     const pin = s.fullMap ? 11 : Math.max(7, Math.min(13, v.scale * 6));
@@ -408,6 +440,24 @@ export function createMapPainter(world) {
       g.restore();
     }
     const heli = s.helicopter;
+    // Roadblocks: a striped bar across the road with a red flare halo.
+    for (const block of s.roadblocks ?? []) {
+      const x = v.x(block.x), y = v.y(block.z);
+      if (!inside(x, y, -10)) continue;
+      g.save();
+      g.translate(x, y);
+      g.rotate(-block.along);
+      g.shadowColor = '#ff2a1e';
+      g.shadowBlur = 12;
+      g.fillStyle = 'rgba(255, 60, 40, 0.35)';
+      g.beginPath(); g.arc(0, 0, pin * 1.3, 0, Math.PI * 2); g.fill();
+      g.shadowBlur = 0;
+      for (let i = 0; i < 4; i += 1) {
+        g.fillStyle = i % 2 ? '#ff3b3b' : '#f4f4f4';
+        g.fillRect(-pin + (i * pin) / 2, -2.5, pin / 2, 5);
+      }
+      g.restore();
+    }
     if (heli) {
       const x = v.x(heli.spotX ?? heli.x), y = v.y(heli.spotZ ?? heli.z);
       g.fillStyle = 'rgba(255, 250, 220, 0.18)';

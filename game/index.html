@@ -52,7 +52,14 @@
 
   <div class="notification-stack" id="notifications"></div>
 
+  <div class="dispatch-card" id="dispatchCard" aria-live="polite">
+    <div class="dispatch-head"><span class="dispatch-led"></span><span id="dispatchTitle">SBPD DISPATCH · AIR ONE</span><span class="dispatch-freq">CH 7 · 460.15</span></div>
+    <div class="dispatch-text" id="dispatchText">All units, Air One on station.</div>
+    <div class="dispatch-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  </div>
+
   <div class="hud-bottom-left">
+    <div class="crew-badge" id="crewBadge" aria-label="Crew status"></div>
     <div class="minimap-frame">
       <canvas id="minimap" width="560" height="372" aria-label="Live minimap"></canvas>
       <span class="compass-n">N</span>
@@ -93,6 +100,7 @@
   </div>
 
   <div class="interact-prompt" id="interactPrompt"><span class="key-pill">F</span><span id="interactText">Steal Marisol Coupe</span></div>
+  <div class="cover-chip" id="coverChip"><span class="cover-shield"></span><span id="coverText">IN COVER · COASTAL MUSCLE</span><span class="cover-keys">Q / C LEAVE · RMB PEEK</span></div>
 
   <div class="controls-hint" id="controlsHint">WASD MOVE · SHIFT SPRINT · SPACE JUMP · E/F VEHICLE · 1-4 WEAPON · M MAP · R RADIO · ESC PAUSE</div>
   <div class="status-line" id="statusLine" role="status" aria-live="polite"></div>
@@ -105,6 +113,7 @@
       <nav class="cm-tabs" id="cmTabs">
         <button data-action="menuTab" data-tab="map" class="on">MAP</button>
         <button data-action="menuTab" data-tab="story">STORY</button>
+        <button data-action="menuTab" data-tab="crew">CREW &amp; TURF</button>
         <button data-action="menuTab" data-tab="activities">ACTIVITIES</button>
         <button data-action="menuTab" data-tab="garage">GARAGE</button>
         <button data-action="menuTab" data-tab="stats">STATS</button>
@@ -114,6 +123,7 @@
     <div class="cm-body">
       <div class="cm-map-wrap">
         <canvas id="cityMapCanvas" width="1240" height="860" aria-label="Full city map"></canvas>
+        <div class="cm-turf" id="cmTurf" aria-label="District standing"></div>
         <div class="cm-legend">
           <span><i class="lg-player"></i>YOU</span><span><i class="lg-mission"></i>MISSION</span><span><i class="lg-act"></i>ACTIVITY</span>
           <span><i class="lg-garage"></i>GARAGE</span><span><i class="lg-police"></i>POLICE</span><span><i class="lg-ramp"></i>STUNT RAMP</span>
@@ -135,14 +145,15 @@
         <h1 class="logo"><span class="logo-solaris">SOLARIS</span><span class="logo-bay">BAY</span></h1>
       </div>
       <p class="tagline">Sun, salt and <em>unfinished business.</em></p>
-      <p class="premise">Elena and Mateo have five jobs, one city and no intention of leaving quietly. Drive the strip, hit the vault, outrun the heat.</p>
+      <p class="premise">Elena and Mateo have eight jobs, five districts to win and no intention of leaving quietly. Drive the strip, hit the vault, outrun the heat.</p>
       <div class="menu">
         <button class="menu-btn primary" data-action="new"><span class="btn-index">01</span><span class="btn-label">NEW GAME</span><span class="btn-arrow">→</span></button>
         <button class="menu-btn" data-action="continue" id="continueBtn"><span class="btn-index">02</span><span class="btn-label">CONTINUE SAVE</span><span class="btn-meta" id="continueMeta">NO SAVE FOUND</span></button>
-        <button class="menu-btn" data-action="controls"><span class="btn-index">03</span><span class="btn-label">CONTROLS &amp; CITY</span><span class="btn-arrow">→</span></button>
+        <button class="menu-btn" data-action="loadMenu" id="loadMenuBtn"><span class="btn-index">03</span><span class="btn-label">LOAD GAME</span><span class="btn-meta" id="loadMenuMeta">3 SLOTS + AUTOSAVE</span></button>
+        <button class="menu-btn" data-action="controls"><span class="btn-index">04</span><span class="btn-label">CONTROLS &amp; CITY</span><span class="btn-arrow">→</span></button>
       </div>
       <div class="title-stats">
-        <div class="stat"><span class="stat-label">STORY</span><span class="stat-value" id="titleProgress">0 / 5</span></div>
+        <div class="stat"><span class="stat-label">STORY</span><span class="stat-value" id="titleProgress">0 / 8</span></div>
         <div class="stat"><span class="stat-label">CASH</span><span class="stat-value gold" id="titleCash">$640</span></div>
         <div class="stat"><span class="stat-label">SUN TOKENS</span><span class="stat-value" id="titleTokens">0 / 12</span></div>
         <div class="stat"><span class="stat-label">PEAK HEAT</span><span class="stat-value" id="titlePeak">★ 0</span></div>
@@ -150,7 +161,7 @@
     </div>
 
     <div class="title-right">
-      <div class="right-head"><span>THE CITY</span><span class="right-line"></span><span>6 DISTRICTS</span></div>
+      <div class="right-head"><span>THE CITY</span><span class="right-line"></span><span>7 DISTRICTS</span></div>
       <ul class="district-list">
         <li><span class="d-swatch" style="--c:#ffb257"></span><div><span class="d-name">PALM STRIP</span><span class="d-blurb">Oceanfront boulevard · pastel hotels · endless palms</span></div></li>
         <li><span class="d-swatch" style="--c:#ff6f91"></span><div><span class="d-name">CORAL PIER</span><span class="d-blurb">A neon wheel over the water · salt on everything</span></div></li>
@@ -158,6 +169,7 @@
         <li><span class="d-swatch" style="--c:#57d8d0"></span><div><span class="d-name">HARBOR DOCKS</span><span class="d-blurb">Containers, cranes and quiet money</span></div></li>
         <li><span class="d-swatch" style="--c:#5cc8ff"></span><div><span class="d-name">MARINA CAUSEWAY</span><span class="d-blurb">Bridges to the yachts · glass on the water</span></div></li>
         <li><span class="d-swatch" style="--c:#9ee06a"></span><div><span class="d-name">CASA HILLS</span><span class="d-blurb">Pastel houses stacked against the hillside</span></div></li>
+        <li><span class="d-swatch" style="--c:#ffe08a"></span><div><span class="d-name">STARLIGHT KEY</span><span class="d-blurb">An island marina · yachts and private slips</span></div></li>
       </ul>
       <div class="right-head second"><span>FIELD MANUAL</span><span class="right-line"></span><span>KEYBOARD</span></div>
       <div class="mini-controls">
@@ -165,6 +177,8 @@
         <div><span class="key-group">SHIFT</span><span>Sprint / Nitro</span></div>
         <div><span class="key-group">MOUSE</span><span>Look · LMB fire</span></div>
         <div><span class="key-group">E / F</span><span>Steal &amp; exit car</span></div>
+        <div><span class="key-group">Q / C</span><span>Take cover</span></div>
+        <div><span class="key-group">T</span><span>Call Mateo</span></div>
         <div><span class="key-group">1-4</span><span>Weapons</span></div>
         <div><span class="key-group">R</span><span>Radio station</span></div>
         <div><span class="key-group">SPACE</span><span>Handbrake / Jump</span></div>
@@ -197,7 +211,9 @@
         <p><b>Mouse / Arrows</b> camera and aim · <b>LMB</b> shoot / punch</p>
         <p><b>1</b> fists · <b>2</b> pistol · <b>3</b> SMG · <b>4</b> shotgun</p>
         <p><b>X</b> reload · <b>E / F</b> enter the nearest car</p>
-        <p class="muted-note">Weapons unlock through the story. Ammo auto-reloads when a magazine runs dry.</p>
+        <p><b>Q / C</b> drop into low cover beside a car, bollard or barricade · <b>RMB</b> peek and fire</p>
+        <p><b>T</b> call Mateo to your side or stand him down</p>
+        <p class="muted-note">Weapons unlock through the story. Cover soaks most incoming fire and steadies your aim.</p>
       </div>
       <div class="manual-col">
         <h3>BEHIND THE WHEEL</h3>
@@ -211,9 +227,9 @@
         <h3>THE CITY</h3>
         <p><b>Gold diamond</b> mission waypoint</p>
         <p><b>Red / blue blips</b> police · <b>white dots</b> traffic</p>
-        <p><b>Stars</b> wanted level · break line of sight to cool down</p>
-        <p><b>R</b> radio · <b>M / Tab</b> city map, story, garage · <b>Esc</b> pause, save, load</p>
-        <p class="muted-note">Sun tokens, armour and health are scattered across all six districts.</p>
+        <p><b>Stars</b> wanted level · from three stars SBPD sets roadblocks and Air One flies</p>
+        <p><b>R</b> radio · <b>M / Tab</b> city map, story, crew, turf, garage · <b>Esc</b> pause, save, load</p>
+        <p class="muted-note">Jobs, races, runs and shaken chases raise district standing: passive cash and garage discounts.</p>
       </div>
     </div>
     <div class="modal-foot"><span>SOLARIS BAY · PALM STRIP TO MARINA CAUSEWAY</span><button class="modal-btn" data-action="closeControls">BACK TO THE CITY</button></div>
@@ -236,7 +252,7 @@
         <button class="menu-btn" data-action="toggleSound"><span class="btn-label" id="soundLabel">SOUND · ON</span></button>
         <button class="menu-btn" data-action="restart"><span class="btn-label">RESTART STORY</span></button>
         <button class="menu-btn" data-action="quit"><span class="btn-label">QUIT TO TITLE</span></button>
-        <div class="pause-note">Autosave runs after every mission. Manual slots below.</div>
+        <div class="pause-note">Autosave runs after every mission. Three named manual slots below: click to save or overwrite, ✕ to delete.</div>
       </div>
       <div class="save-columns">
         <div class="save-col">
@@ -252,9 +268,19 @@
   </div>
 </div>
 
+<div id="slotsScreen" class="screen overlay hidden">
+  <div class="modal slots-modal">
+    <div class="modal-head"><span class="modal-kicker">LOAD GAME</span><span class="modal-close" data-action="closeSlots">CLOSE ✕</span></div>
+    <h2>Save slots</h2>
+    <p class="pause-sub">Three named manual slots and the autosave, stored in this browser only.</p>
+    <div id="titleSlots" class="slot-list slot-grid"></div>
+    <div class="modal-foot"><span>LOAD A SLOT TO PICK UP WHERE IT LEFT OFF · ✕ DELETES IT</span><button class="modal-btn" data-action="closeSlots">BACK</button></div>
+  </div>
+</div>
+
 <div id="storyScreen" class="screen overlay hidden">
   <div class="modal story-modal">
-    <span class="story-kicker">STORY COMPLETE · 05 / 05</span>
+    <span class="story-kicker">STORY COMPLETE · 08 / 08</span>
     <h2>THE CITY<br><span>IS YOURS.</span></h2>
     <p class="story-copy">Elena has the ledger, Mateo has the case, and Solaris Bay has a new set of legends. The sun keeps coming up on the Strip.</p>
     <div class="story-stats" id="storyStats"></div>

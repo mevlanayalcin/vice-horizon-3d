@@ -3,31 +3,32 @@
 // timed activity starts when the player rolls into its cyan start ring, runs a chain
 // of checkpoints against the clock and pays cash and respect; best times are saved.
 // Back-to-back clears build a streak multiplier (to x2), and every best time earns a
-// gold, silver or bronze medal against the activity's par.
+// gold, silver or bronze medal against the activity's par. A clean run also raises the
+// district standing (turf.js) of the district it serves.
 
 export const ACTIVITIES = [
   {
     id: 'sprint', kind: 'race', name: 'Ocean Boulevard Sprint', code: 'RACE',
     blurb: 'Hotel to hotel down the Strip, then north past the Harbor gate.',
-    start: [318, 255], needs: 'vehicle', time: 48, reward: 2500, respect: 120,
+    start: [318, 255], needs: 'vehicle', time: 48, reward: 2500, respect: 120, district: 'palm', turf: 8,
     route: [[200, 254], [60, 254], [-80, 254], [-220, 254], [-388, 252], [-390, 140]],
   },
   {
     id: 'circuit', kind: 'race', name: 'Midtown Neon Circuit', code: 'RACE',
     blurb: 'A lap of the glass towers around the Solaris Vault.',
-    start: [140, 130], needs: 'vehicle', time: 44, reward: 3200, respect: 140,
+    start: [140, 130], needs: 'vehicle', time: 44, reward: 3200, respect: 140, district: 'midtown', turf: 8,
     route: [[130, 4], [4, 0], [0, -126], [126, -130], [130, -2], [138, 124]],
   },
   {
     id: 'courier', kind: 'courier', name: 'Coral Courier', code: 'JOB',
     blurb: 'A sealed parcel from the pier office to a Casa Hills porch. No questions.',
-    start: [-150, 292], needs: null, time: 75, reward: 1800, respect: 80,
+    start: [-150, 292], needs: null, time: 75, reward: 1800, respect: 80, district: 'hills', turf: 7,
     route: [[-130, 140], [-4, -128], [126, -380]],
   },
   {
     id: 'fares', kind: 'fare', name: 'Sun Cab Fares', code: 'TAXI',
     blurb: 'Take a Sun Cab to the rank and run tourists across the bay.',
-    start: [-262, 262], needs: 'taxi', time: 60, reward: 1400, respect: 70,
+    start: [-262, 262], needs: 'taxi', time: 60, reward: 1400, respect: 70, district: 'key', turf: 7,
     route: [[-262, 140], [-130, 4], [262, 6], [392, 136]],
   },
 ];
@@ -52,7 +53,7 @@ export function streakMultiplier(streak) {
   return 1 + Math.min(4, Math.max(0, streak)) * 0.25;
 }
 
-export function createActivities({ combat, bus, progression }) {
+export function createActivities({ combat, bus, progression, turf = null }) {
   const state = {
     active: null,
     index: 0,
@@ -125,6 +126,8 @@ export function createActivities({ combat, bus, progression }) {
     bus.notify?.(`${def.name.toUpperCase()} · ${time}s · +$${pay.toLocaleString('en-US')}${multiplier > 1 ? ` · STREAK x${multiplier.toFixed(2)}` : ''}`, 'cash', 3800);
     if (personalBest && best) bus.notify?.(`NEW PERSONAL BEST · ${time}s (was ${best}s)${medal ? ` · ${medal.name}` : ''}`, 'mission', 3600);
     else if (medal) bus.notify?.(`${medal.name} MEDAL · ${def.name.toUpperCase()}`, 'mission', 3000);
+    // Clean runs build the crew's name where the run ends.
+    turf?.add(def.district, def.turf ?? 6, def.code);
     bus.activityComplete?.(def);
   }
 

@@ -133,7 +133,7 @@ export function updateVehicle(v, controls, dt, world, options = {}) {
   const boosting = !!controls.boost && v.boost > 0.02 && Math.abs(v.speed) > 2;
   v.boosting = boosting;
   if (boosting) v.boost = Math.max(0, v.boost - dt * 0.32 * (v.nitroRate ?? 1));
-  else v.boost = Math.min(1, v.boost + dt * 0.09);
+  else v.boost = Math.min(1, v.boost + dt * 0.09 * (v.nitroRecharge ?? 1));
 
   // Decompose velocity into forward / lateral and apply grip to the latter.
   let vf = v.velocityX * fx + v.velocityZ * fz;

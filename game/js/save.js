@@ -1,10 +1,15 @@
-// save.js — multi-slot localStorage persistence for SOLARIS BAY. Three manual slots
-// plus an autosave; every read is defensive (private mode, quota, corrupt JSON) and
-// snapshots are plain data so a save from an older build can be skipped safely.
+// save.js — multi-slot localStorage persistence for SOLARIS BAY: three named manual slots
+// plus an autosave. Each slot records a name (the job in progress), district, story
+// progress, cash, crew, turf standing and a timestamp, and can be overwritten or deleted.
+// Every read is defensive (private mode, quota, corrupt JSON) and snapshots are plain data
+// so a save from an older build can be skipped safely. Nothing leaves the browser.
+
+import { MISSIONS } from './missions.js';
 
 const PREFIX = 'solarisbay.v1.';
 const SLOTS = ['auto', '1', '2', '3'];
 const VERSION = 1;
+const MANUAL = SLOTS.filter((s) => s !== 'auto');
 
 function key(slot) {
   return `${PREFIX}${slot}`;
@@ -36,10 +41,13 @@ export function createSave() {
         exists: !!data,
         savedAt: data?.savedAt ?? 0,
         label: slot === 'auto' ? 'AUTOSAVE' : `SLOT ${slot}`,
+        name: data?.name ?? '',
         cash: data?.cash ?? 0,
         mission: data?.missionIndex ?? 0,
         progress: data?.progress ?? 0,
+        total: MISSIONS.length,
         district: data?.district ?? 'Palm Strip',
+        crew: Object.entries(data?.crew?.recruited ?? {}).filter(([, on]) => on).map(([id]) => id),
         storyComplete: !!data?.storyComplete,
       });
     }
@@ -90,12 +98,30 @@ export function createSave() {
     }
   }
 
-  return { SLOTS, list, hasAny, latest, read, write, remove };
+  return { SLOTS, MANUAL, list, hasAny, latest, read, write, remove };
+}
+
+/** "20 Nov 18:42" for a slot's timestamp, in the player's own locale clock. */
+export function slotTime(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${d.getDate()} ${months[d.getMonth()]} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** The name a slot gets: the job in progress, or the next one up. */
+function slotName(game) {
+  const m = game.missions;
+  if (m.state.storyComplete) return 'Free roam · the city is yours';
+  const index = m.active ? m.index : m.state.done.findIndex((d) => !d);
+  const def = MISSIONS[index >= 0 ? index : 0];
+  return `${def.code} · ${def.name}`;
 }
 
 export function snapshot(game) {
   const p = game.combat.player;
   return {
+    name: slotName(game),
     cash: p.cash,
     respect: p.respect,
     health: p.health,
@@ -117,6 +143,8 @@ export function snapshot(game) {
     vehicleType: p.inVehicle ? p.inVehicle.type : null,
     progression: game.progression?.snapshot(),
     activities: game.activities?.snapshot(),
+    crew: game.crew?.snapshot(),
+    turf: game.turf?.snapshot(),
   };
 }
 
@@ -137,14 +165,14 @@ export function applySnapshot(game, data) {
       }
     }
   }
-  if (Array.isArray(data.done)) game.missions.state.done = data.done.slice(0, 5);
+  if (Array.isArray(data.done)) game.missions.state.done = MISSIONS.map((_, i) => !!data.done[i]);
   game.missions.state.done = game.missions.state.done.map(Boolean);
   game.missions.state.storyComplete = !!data.storyComplete;
   game.missions.state.active = false;
   game.missions.state.step = -1;
   game.missions.state.nextTimer = 0;
   game.missions.state.startingSoon = false;
-  game.missions.state.index = Math.min(4, Math.max(0, (Number(data.missionIndex) || 0) + (data.storyComplete ? 0 : 0)));
+  game.missions.state.index = Math.min(MISSIONS.length - 1, Math.max(0, Number(data.missionIndex) || 0));
   if (Number.isFinite(data.hour)) game.hour = data.hour;
   if (Number.isFinite(data.playTime)) game.playTime = data.playTime;
   if (data.player) {
@@ -163,5 +191,9 @@ export function applySnapshot(game, data) {
   if (Number.isFinite(data.radio)) game.audio.setRadio(data.radio);
   game.progression?.restore(data.progression);
   game.activities?.restore(data.activities);
+  game.turf?.restore(data.turf);
+  game.crew?.restore(data.crew);
+  // Older saves carry no crew block: recruit from the story they record.
+  game.crew?.syncStory(game.missions.state.done, false);
   return true;
 }

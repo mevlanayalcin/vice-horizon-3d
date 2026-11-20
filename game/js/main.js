@@ -1,7 +1,7 @@
 // main.js — boot, the fixed 60 Hz loop, input, follow camera and the title / play /
 // pause / city-menu state machine. It wires the renderer, city, traffic, police,
-// combat, missions, side activities, progression, audio, HUD, city menu, save slots
-// and photo mode together; nothing here reaches the network.
+// combat and cover, crew, turf, missions, side activities, progression, audio, HUD,
+// city menu, named save slots and photo mode together; nothing here reaches the network.
 
 import { PALETTE, SAFEHOUSE, STEP, clamp, createRandom, lerp } from './config.js';
 import { createRenderer, cross3, normalize3 } from './renderer3d.js';
@@ -20,7 +20,9 @@ import { createAudio } from './audio.js';
 import { createHud } from './hud.js';
 import { createCityMenu } from './citymenu.js';
 import { createShotStage } from './shotstage.js';
-import { createSave, snapshot, applySnapshot } from './save.js';
+import { createSave, snapshot, applySnapshot, slotTime } from './save.js';
+import { createCrew } from './crew.js';
+import { createTurf } from './turf.js';
 
 const canvas = document.getElementById('game');
 const params = new URLSearchParams(window.location.search);
@@ -47,11 +49,37 @@ const bus = {
   onWantedCool: (level) => {
     hud.notify(level === 0 ? 'You lost the cops' : `Heat cooling · ${level} star${level === 1 ? '' : 's'} left`, 'mission');
   },
-  onEvaded: () => {
+  onEvaded: (chasePeak = 0) => {
     hud.notify('EVADED · wanted level clear', 'mission');
     progression.count('evaded');
     progression.addRespect(50, 'EVADED');
+    // Shaking a three-star-plus chase raises standing where the crew went to ground.
+    if (chasePeak >= 3) turf.add(turf.at(combat.player.x, combat.player.z), chasePeak * 3, `${chasePeak}-STAR CHASE SHAKEN`);
   },
+  onRoadblock: (block) => {
+    const where = block.street || 'the Strip';
+    hud.dispatch('SBPD DISPATCH · ROADBLOCK', `All units: two cruisers and flares across ${where}. Air One, light him up.`, 6200);
+    hud.notify(`ROADBLOCK AHEAD · ${where.toUpperCase()}`, 'wanted', 3200);
+    if (audio.ready) audio.playDispatch();
+  },
+  onHelicopter: () => {
+    hud.dispatch('SBPD DISPATCH · AIR ONE', 'Air One on station. Searchlight on the suspect vehicle, ground units close in.', 6200);
+    if (audio.ready) audio.playDispatch();
+  },
+  onBarrierHit: () => {
+    rig.shake = 0.3;
+    if (audio.ready) { audio.playCrash(0.6); audio.playClang(0.5); }
+    bus.notifyOnce('BARRIER SMASHED', 'warn', 5);
+  },
+  onCover: (spot) => {
+    if (spot && audio.ready) audio.playCover();
+    if (spot) bus.notifyOnce(`COVER · ${String(spot.name).toUpperCase()}`, 'info', 3);
+  },
+  coverVehicles: () => allVehicles(),
+  crewDecoy: (enemy) => crew.decoyFor(enemy),
+  heatCoolRate: () => crew.heatCool,
+  hackRate: () => crew.hackRate,
+  onCrewShot: () => { if (audio.ready) audio.playShot('smg'); },
   onPoliceSpawned: () => {},
   onOfficers: () => hud.notify('Officers deploying', 'wanted', 2200),
   onWreck: () => hud.notify('Cruiser disabled', 'mission', 2200),
@@ -108,6 +136,7 @@ const bus = {
     const next = MISSIONS[missions.index + 1];
     hud.missionComplete(mission, reward, next?.name);
     if (audio.ready) audio.playMission();
+    crew.syncStory(missions.state.done);
     save.write('auto', snapshot(game));
     refreshTitle();
     if (missions.state.storyComplete) {
@@ -135,13 +164,15 @@ const bus = {
 const traffic = createTraffic(world, { seed: 0x7ad10c });
 const combat = createCombat(world, bus);
 const police = createPolice(world, combat, bus);
-const missions = createMissions({ world, combat, police, bus });
-const progression = createProgression({ combat, bus });
-const activities = createActivities({ combat, bus, progression });
-const cityMenu = createCityMenu({ painter: hud.painter, missions, activities, progression, combat, police });
+const turf = createTurf({ combat, bus });
+const crew = createCrew({ world, combat, police, bus });
+const missions = createMissions({ world, combat, police, bus, turf });
+const progression = createProgression({ combat, bus, turf });
+const activities = createActivities({ combat, bus, progression, turf });
+const cityMenu = createCityMenu({ painter: hud.painter, missions, activities, progression, combat, police, crew, turf });
 
 const game = {
-  renderer, world, audio, combat, traffic, police, missions, activities, progression, hud, save,
+  renderer, world, audio, combat, traffic, police, missions, activities, progression, hud, save, crew, turf,
   tokens, pickups, hour: 19.05, playTime: 0,
   get cash() { return combat.player.cash; },
 };
@@ -253,6 +284,8 @@ function newGame(startMission = true) {
   for (const pickup of pickups) { pickup.taken = false; pickup.respawn = 0; }
   progression.reset();
   activities.reset();
+  crew.reset();
+  turf.reset();
   game.hour = 18.62;
   game.playTime = 0;
   playTime = 0;
@@ -318,12 +351,23 @@ function refreshTitle() {
   const latest = save.latest();
   hud.setTitle({
     progress: missions.progress,
+    total: MISSIONS.length,
     cash: combat.player.cash,
     tokens: tokens.filter((t) => t.taken).length,
     peak: Math.max(police.peak, police.wanted),
     hasSave: slots.some((s) => s.exists) || (mode === 'title' && isShot),
-    saveLabel: latest ? `MISSION ${Math.min(5, (latest.progress ?? 0) + 1)} · $${(latest.cash ?? 0).toLocaleString('en-US')}` : 'LATEST SAVE',
+    slotsUsed: slots.filter((s) => s.exists).length,
+    saveLabel: latest ? `MISSION ${String(Math.min(MISSIONS.length, (latest.progress ?? 0) + 1)).padStart(2, '0')} · $${(latest.cash ?? 0).toLocaleString('en-US')}` : 'LATEST SAVE',
     storyComplete: missions.state.storyComplete,
+  });
+}
+
+/** Re-list the pause menu's save and load columns. */
+function refreshPauseSlots() {
+  hud.refreshSlots(save.list(), {
+    cash: combat.player.cash,
+    subtitle: `${world.districtName(combat.player.x, combat.player.z)} · ${timeNameAt(game.hour)} · ${clockAt(game.hour)}`,
+    time: slotTime,
   });
 }
 
@@ -331,12 +375,39 @@ function pauseGame() {
   if (mode !== 'playing') return;
   mode = 'paused';
   hud.showPause(true);
-  hud.refreshSlots(save.list(), {
-    cash: combat.player.cash,
-    subtitle: `${world.districtName(combat.player.x, combat.player.z)} · ${timeNameAt(game.hour)} · ${clockAt(game.hour)}`,
-  });
+  refreshPauseSlots();
   hud.setSoundLabel(!audio.muted);
   if (document.pointerLockElement === canvas) document.exitPointerLock();
+}
+
+/** Load a save slot from the pause menu or the title screen and start playing it. */
+function loadSlot(slot) {
+  const payload = save.read(slot);
+  if (!payload) {
+    hud.notify('That slot is empty', 'warn', 2500);
+    return false;
+  }
+  initAudioOnce();
+  combat.reset(world.spawn.x, world.spawn.z);
+  applySnapshot(game, payload);
+  currentVehicle = null;
+  combat.player.inVehicle = null;
+  rig.yaw = Math.PI;
+  rig.pitch = 0.17;
+  deathHandled = false;
+  mode = 'playing';
+  hud.showPause(false);
+  hud.showSlots(false);
+  hud.showTitle(false);
+  hud.hideStoryComplete();
+  hud.setPlaying(true, false);
+  combat.clearEnemies();
+  police.clear();
+  const next = MISSIONS.findIndex((_, i) => !missions.state.done[i]);
+  if (next >= 0 && !missions.state.storyComplete) missions.startMission(next, true);
+  hud.notify(`Loaded ${slot === 'auto' ? 'autosave' : `slot ${slot}`} · ${payload.name ?? 'Solaris Bay'}`, 'mission', 2600);
+  refreshTitle();
+  return true;
 }
 
 function resumeGame() {
@@ -372,6 +443,8 @@ function liveMapState() {
     waypoint: activities.waypoint() ?? missions.waypoint(),
     checkpoints: activities.checkpoints,
     helicopter: police.helicopter,
+    roadblocks: police.roadblocks,
+    turf: turf.state.standing,
     activityStarts: activities.active ? [] : activities.ACTIVITIES,
     subtitle: `${world.districtName(p.x, p.z)} · ${clockAt(game.hour)} · ${timeNameAt(game.hour)}`,
   };
@@ -380,6 +453,7 @@ function liveMapState() {
 function showStoryComplete() {
   mode = 'story';
   hud.showStoryComplete({
+    total: MISSIONS.length,
     cash: combat.player.cash,
     respect: combat.player.respect,
     peak: Math.max(police.peak, police.wanted),
@@ -426,30 +500,25 @@ function handleAction(action, data) {
       } else {
         hud.notify('Could not save (storage blocked)', 'warn', 3000);
       }
-      hud.refreshSlots(save.list(), { cash: combat.player.cash });
+      refreshPauseSlots();
       refreshTitle();
       break;
     }
+    case 'deleteSlot': {
+      if (save.remove(data.slot)) hud.notify(`Deleted ${data.slot === 'auto' ? 'autosave' : `slot ${data.slot}`}`, 'warn', 2200);
+      refreshPauseSlots();
+      if (mode === 'title') hud.showSlots(true, save.list(), { time: slotTime });
+      refreshTitle();
+      break;
+    }
+    case 'loadMenu': hud.showSlots(true, save.list(), { time: slotTime }); break;
+    case 'closeSlots': hud.showSlots(false); break;
+    case 'crewToggle':
+      crew.toggle(data.crew);
+      cityMenu.render(liveMapState());
+      break;
     case 'loadSlot': {
-      const payload = save.read(data.slot);
-      if (payload) {
-        combat.reset(world.spawn.x, world.spawn.z);
-        applySnapshot(game, payload);
-        currentVehicle = null;
-        combat.player.inVehicle = null;
-        rig.yaw = Math.PI;
-        mode = 'playing';
-        hud.showPause(false);
-        hud.showTitle(false);
-        hud.setPlaying(true, false);
-        combat.clearEnemies();
-        police.clear();
-        const next = MISSIONS.findIndex((_, i) => !missions.state.done[i]);
-        if (next >= 0 && !missions.state.storyComplete) missions.startMission(next, true);
-        hud.notify('Save loaded', 'mission', 2500);
-      } else {
-        hud.notify('That slot is empty', 'warn', 2500);
-      }
+      loadSlot(data.slot);
       break;
     }
     default: break;
@@ -469,6 +538,7 @@ function respawnPlayer() {
   p.velocityX = 0;
   p.velocityZ = 0;
   p.inVehicle = null;
+  p.cover = null;
   currentVehicle = null;
   police.clear();
   combat.clearEnemies();
@@ -507,6 +577,7 @@ function enterVehicle(car) {
   currentVehicle = car;
   const p = combat.player;
   p.inVehicle = car;
+  p.cover = null;
   p.x = car.x;
   p.z = car.z;
   p.heading = car.heading;
@@ -563,7 +634,7 @@ function promptForPlayer() {
 // Input
 // ---------------------------------------------------------------------------
 const GAME_KEYS = new Set([
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyF', 'KeyR', 'KeyX', 'KeyH', 'KeyP',
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyF', 'KeyR', 'KeyX', 'KeyH', 'KeyP', 'KeyQ', 'KeyC', 'KeyT',
   'ShiftLeft', 'ShiftRight', 'Space', 'Escape', 'Tab', 'KeyM',
   'Digit1', 'Digit2', 'Digit3', 'Digit4',
   'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
@@ -618,6 +689,10 @@ window.addEventListener('keydown', (event) => {
     }
   } else if (event.code === 'KeyX') {
     if (!currentVehicle) combat.reload();
+  } else if (event.code === 'KeyQ' || event.code === 'KeyC') {
+    if (!currentVehicle) combat.toggleCover();
+  } else if (event.code === 'KeyT') {
+    crew.toggle('mateo');
   } else if (event.code === 'KeyH') {
     if (currentVehicle && audio.ready) audio.playHorn();
   } else if (/^Digit[1-4]$/.test(event.code)) {
@@ -779,6 +854,8 @@ function updateGame(dt) {
 
   if (driving) {
     const car = currentVehicle;
+    // Elena on comms tunes the nitro refill.
+    car.nitroRecharge = crew.nitroRecharge;
     const throttle = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
     const steer = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
     const events = updateVehicle(car, {
@@ -864,6 +941,8 @@ function updateGame(dt) {
   }
   combat.update(dt, input, rig.yaw, { aim: input.aim });
   pressedKeys.clear();
+  crew.update(dt);
+  turf.update(dt);
 
   police.update(dt, combat.player, currentVehicle);
   const sirens = police.allCars().filter((c) => c.sirenOn && !c.wrecked);
@@ -983,6 +1062,9 @@ function updateGame(dt) {
     activity: activities.hudInfo(),
     activityStarts: activities.active ? [] : activities.ACTIVITIES,
     helicopter: police.helicopter,
+    roadblocks: police.roadblocks,
+    turf: turf.state.standing,
+    crew: crew.roster(),
     tokens: tokens.filter((t) => t.taken).length,
     city: cityProgress(),
     envName: env.name,
@@ -997,7 +1079,7 @@ function updateGame(dt) {
 function renderFrame(dt) {
   const env = getEnv();
   const scene = buildDynamicScene({
-    time: elapsed, camera, env, world, traffic, combat, missions, activities, police, tokens, pickups,
+    time: elapsed, camera, env, world, traffic, combat, missions, activities, police, crew, tokens, pickups,
     vehicles: allVehicles(),
     playerVehicle: currentVehicle,
     aiming: aimDown || mouseDown || isShot,
@@ -1019,7 +1101,7 @@ function renderFrame(dt) {
 // Photo mode: ?shot=<name> stages a moment of play for the screenshots
 // ---------------------------------------------------------------------------
 const shotStage = createShotStage({
-  world, traffic, police, combat, missions, activities, progression, hud, camera, game, parkedVehicles, random,
+  world, traffic, police, combat, missions, activities, progression, hud, camera, game, parkedVehicles, random, crew, turf,
   setVehicle: (car) => {
     currentVehicle = car;
     combat.player.inVehicle = car;
@@ -1108,6 +1190,7 @@ function syncShotHud() {
     activity: activities.hudInfo(),
     tokens: tokens.filter((t) => t.taken).length,
     city: cityProgress(),
+    crew: crew.roster(),
   });
   hud.setPlaying(shotName !== 'title', !!currentVehicle);
 }
@@ -1132,6 +1215,21 @@ window.__solaris = {
   get state() {
     return {
       mode,
+      missionsTotal: MISSIONS.length,
+      cover: combat.player.cover ? { kind: combat.player.cover.kind, name: combat.player.cover.name } : null,
+      peek: combat.player.peek ?? 0,
+      crew: crew.roster().map((c) => ({ id: c.id, recruited: c.recruited, deployed: c.deployed, status: c.status })),
+      mateo: { visible: crew.mateo.visible, x: crew.mateo.x, z: crew.mateo.z, crouch: crew.mateo.crouch, status: crew.mateo.status },
+      crewShots: crew.state.shots,
+      crewHits: crew.state.hits,
+      turf: { ...turf.state.standing },
+      turfPay: turf.payPerMinute(),
+      turfDiscount: turf.discount(),
+      roadblocks: police.roadblocks.length,
+      barriers: police.roadblocks.reduce((n, b) => n + b.barriers.length, 0),
+      flares: police.roadblocks.reduce((n, b) => n + b.flares.length, 0),
+      dispatch: hud.els.dispatch.classList.contains('show') ? hud.els.dispatchTitle.textContent : null,
+      hack: missions.state.hack,
       cash: combat.player.cash,
       wanted: police.wanted,
       mission: missions.index,
@@ -1247,7 +1345,16 @@ window.__solaris = {
     return { dir, sd, sunDir: env.sunDir, skyTop: env.skyTop, skyHorizon: env.skyHorizon, sunGlow: env.sunGlow };
   },
   debug: {
-    missions, combat, police, traffic, world,
+    missions, combat, police, traffic, world, crew, turf, progression, activities, save,
+    /** Run the live update loop for `seconds` of game time (tests use this to step AI). */
+    step(seconds = 1) { for (let i = 0; i < Math.round(seconds * 60); i += 1) updateGame(STEP); },
+    keydown(code) { window.dispatchEvent(new KeyboardEvent('keydown', { code })); window.dispatchEvent(new KeyboardEvent('keyup', { code })); },
+    placeCar(type, x, z, heading = 0) {
+      const car = createVehicle(type, x, z, heading, { parked: true });
+      car.y = world.groundHeight(x, z) + 0.02;
+      parkedVehicles.push(car);
+      return car.type;
+    },
     get input() { return { mouseDown, aimDown, keys: [...keys], pressed: [...pressedKeys] }; },
     get fx() { return { skids: skidMarks.length, smoke: tyreSmoke.length }; },
   },

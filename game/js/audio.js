@@ -291,6 +291,27 @@ export function createAudio() {
     tone(174, 0.25, { type: 'sawtooth', gain: 0.1, delay: 0.16 });
   }
 
+  /**
+   * SBPD dispatch chatter: a squelch break, two-tone alert chirps, then a burst of narrow-band
+   * "voice" (bandpassed noise stepping through formant-like pitches) and the closing squelch.
+   */
+  function playDispatch() {
+    if (!ready) return;
+    noise(0.09, { freq: 2600, filter: 'bandpass', q: 0.8, gain: 0.16 });
+    tone(1240, 0.07, { type: 'square', gain: 0.05, delay: 0.1 });
+    tone(1660, 0.07, { type: 'square', gain: 0.05, delay: 0.19 });
+    const formants = [720, 1080, 860, 1320, 640, 980, 1180, 760, 1020, 880];
+    formants.forEach((f, i) => noise(0.07, { freq: f, filter: 'bandpass', q: 6, gain: 0.22, delay: 0.32 + i * 0.075 }));
+    noise(0.12, { freq: 3000, filter: 'bandpass', q: 0.7, gain: 0.12, delay: 0.32 + formants.length * 0.075 });
+  }
+
+  /** Dropping into cover: a soft body thump against metal or stone. */
+  function playCover() {
+    if (!ready) return;
+    noise(0.12, { freq: 380, to: 120, filter: 'lowpass', gain: 0.32 });
+    tone(92, 0.1, { type: 'sine', gain: 0.18, to: 60 });
+  }
+
   /** A short burst of tuning static between stations. */
   function tuneStatic() {
     noise(0.22, { freq: 2600, gain: 0.08, filter: 'bandpass', q: 0.6 });
@@ -531,6 +552,8 @@ export function createAudio() {
     playStunt,
     playMission,
     playWanted,
+    playDispatch,
+    playCover,
     get ready() { return ready; },
     get muted() { return muted; },
     get station() { return station; },

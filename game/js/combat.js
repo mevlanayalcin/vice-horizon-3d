@@ -1,7 +1,8 @@
-// combat.js — Mateo on foot: WASD movement relative to the camera, sprint, jump,
-// punch, and four weapons with magazine/reload state. Hitscan tracers, muzzle
-// flashes, sparks, blood, enemy goons and police officers with health bars.
-// buildCharacter() is the shared low-poly person used by pedestrians and NPCs too.
+// combat.js — the player on foot: WASD movement relative to the camera, sprint, jump,
+// punch, Q / C tactical low cover behind cars, bollards and barricades (less incoming
+// damage, steadier peek-and-fire aim), and four weapons with magazine/reload state.
+// Hitscan tracers, muzzle flashes, sparks, blood, enemy goons and police officers.
+// buildCharacter() is the shared low-poly person used by pedestrians, crew and NPCs too.
 
 import { PALETTE, WEAPONS, clamp, lerp, mix3, rgb, shade } from './config.js';
 import { vehicleForward } from './vehicles.js';
@@ -35,7 +36,7 @@ export function characterColors(seed = 0.5, style = 'civ') {
  * Shared stylised humanoid, sculpted from smooth parts: tapered tube limbs with knees and
  * elbows, a lofted torso (hips, waist, chest, shoulders), a rounded head with hair, caps
  * or shades, and shoes. `c` = {x,z,y,heading,phase,speed,colors,aiming,weapon,panic,dead,
- * style,scale,lod}. The walk, aim and panic poses move the joints, not whole boxes.
+ * duck,kneel,style,scale,lod}. The walk, aim, crouch and panic poses move the joints.
  */
 export function buildCharacter(b, c, time = 0) {
   const heading = c.heading ?? 0;
@@ -63,12 +64,24 @@ export function buildCharacter(b, c, time = 0) {
     return;
   }
   // Ducking (0..1): a bystander cowering from gunfire sinks into a crouch, knees forward.
+  // Kneeling (tactical cover): the left knee on the ground, the right foot planted ahead.
+  const kneel = !!c.kneel;
   const duck = clamp(c.duck ?? 0, 0, 1);
-  const hipY = (0.94 - 0.42 * duck) * k + bob;
-  const headY = (1.72 - 0.52 * duck) * k + bob;
+  const hipY = kneel ? 0.52 * k : (0.94 - 0.42 * duck) * k + bob;
+  const headY = kneel ? hipY + 0.75 * k : (1.72 - 0.52 * duck) * k + bob;
 
   // Legs: hip, knee and ankle joints with a forward knee bend in stride.
   for (const [side, st] of [[-1, step], [1, step2]]) {
+    if (kneel) {
+      const down = side < 0;
+      const hip = W(side * 0.095 * k, hipY, -0.04 * k);
+      const knee = down ? W(-0.11 * k, 0.09 * k, 0.04 * k) : W(0.13 * k, 0.46 * k, 0.36 * k);
+      const ankle = down ? W(-0.11 * k, 0.1 * k, -0.4 * k) : W(0.12 * k, 0.1 * k, 0.4 * k);
+      b.tube([hip, knee, ankle], [0.088 * k, 0.07 * k, 0.052 * k], sides, colors.pants);
+      const foot = down ? W(-0.11 * k, 0.07 * k, -0.47 * k) : W(0.12 * k, 0.055 * k, 0.45 * k);
+      b.ellipsoid(foot[0], foot[1], foot[2], 0.062 * k, 0.05 * k, 0.13 * k, shoe, { yaw: down ? yaw : yaw, segments: 6, rings: 3 });
+      continue;
+    }
     const hip = W(side * 0.095 * k, hipY, -0.12 * duck * k);
     const knee = W(side * (0.1 + 0.04 * duck) * k, (0.5 - 0.06 * duck) * k, st * 0.45 + (0.04 + 0.34 * duck) * k);
     const ankle = W(side * 0.1 * k, 0.1 * k, st);
@@ -148,7 +161,7 @@ export function buildCharacter(b, c, time = 0) {
   if (c.style === 'cop') {
     const badge = W(0.09 * k, hipY + 0.42, 0.12 * k);
     b.ellipsoid(badge[0], badge[1], badge[2], 0.035, 0.035, 0.012, colors.accent, { yaw, segments: 5, rings: 3, e: 0.4 });
-  } else if (c.style !== 'goon' && c.style !== 'guard') {
+  } else if (c.style !== 'goon' && c.style !== 'guard' && c.style !== 'crew') {
     // An open overshirt collar in the accent colour.
     const collar = W(0, hipY + 0.55, 0.05 * k);
     b.ellipsoid(collar[0], collar[1], collar[2], 0.11 * k, 0.04 * k, 0.07 * k, colors.accent, { yaw, segments: 6, rings: 3 });
@@ -166,9 +179,16 @@ export function buildCharacter(b, c, time = 0) {
     const back = W(0, headY - 0.07 * k, -0.07 * k);
     b.ellipsoid(back[0], back[1], back[2], 0.11 * k, 0.17 * k, 0.07 * k, colors.hair, { yaw, segments: 7, rings: 4 });
   }
-  if (c.style === 'player' || c.style === 'goon') {
+  if (c.style === 'player' || c.style === 'goon' || c.style === 'crew') {
     const shades = W(0, headY + 0.012 * k, 0.122 * k);
     b.ellipsoid(shades[0], shades[1], shades[2], 0.1 * k, 0.03 * k, 0.025 * k, rgb(0x0d0f14), { yaw, segments: 6, rings: 3, s: -0.95 });
+  }
+  if (c.style === 'crew') {
+    // Crew pointman: a black watch cap and a gold-lit comms earpiece.
+    const cap = W(0, headY + 0.07 * k, -0.01 * k);
+    b.ellipsoid(cap[0], cap[1], cap[2], 0.127 * k, 0.095 * k, 0.137 * k, rgb(0x16181c), { yaw, segments: 9, rings: 4, top: 0.5 });
+    const ear = W(0.115 * k, headY, 0.0);
+    b.ellipsoid(ear[0], ear[1], ear[2], 0.026 * k, 0.04 * k, 0.03 * k, colors.accent, { yaw, segments: 5, rings: 3, e: 0.8 });
   }
   if (c.style === 'cop') {
     const cap = W(0, headY + 0.06 * k, 0);
@@ -178,7 +198,7 @@ export function buildCharacter(b, c, time = 0) {
   }
 
   // Arms: panic up, aiming forward, or swinging with the walk. Short sleeves, bare forearms.
-  const longSleeve = c.style === 'cop' || c.style === 'guard' || !!colors.jacket;
+  const longSleeve = c.style === 'cop' || c.style === 'guard' || c.style === 'crew' || !!colors.jacket;
   const sleeve = colors.jacket ?? colors.shirt;
   const sleeveRow = (color) => (i) => (i === 0 ? color : longSleeve ? shade(color, 0.94) : colors.skin);
   const arm = (shoulder, elbow, hand) => {
@@ -301,6 +321,9 @@ export function createCombat(world, bus) {
     colors: { skin: rgb(0xc58f68), shirt: rgb(0xe85a44), pants: rgb(0x3c4d68), hair: rgb(0x1d1a19), jacket: rgb(0xeee4d2), accent: rgb(0xffc24b) },
     style: 'player',
     longHair: false,
+    // Tactical cover (Q / C): the prop being used, and how far the player is peeking over it.
+    cover: null,
+    peek: 0,
   };
 
   const enemies = [];
@@ -332,6 +355,8 @@ export function createCombat(world, bus) {
     player.inVehicle = null;
     player.jumpY = 0;
     player.jumpVelocity = 0;
+    player.cover = null;
+    player.peek = 0;
     enemies.length = 0;
     tracers.length = 0;
     particles.length = 0;
@@ -408,6 +433,56 @@ export function createCombat(world, bus) {
     enemies.length = 0;
   }
 
+  // ------------------------------------------------------------------ cover
+  /**
+   * The nearest thing to crouch behind within reach: a parked car's flank (closest point on
+   * its footprint), or a static cover prop (bollard, barricade, planter) from the world.
+   */
+  function findCover(maxDist = 2.8) {
+    let best = null, bestD = maxDist;
+    for (const car of bus.coverVehicles?.() ?? []) {
+      if (car.removed || car === player.inVehicle) continue;
+      const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+      const dx = player.x - car.x, dz = player.z - car.z;
+      const along = clamp(dx * fx + dz * fz, -car.spec.length / 2, car.spec.length / 2);
+      const side = clamp(dx * fz - dz * fx, -car.spec.width / 2, car.spec.width / 2);
+      const px = car.x + fx * along + fz * side, pz = car.z + fz * along - fx * side;
+      const d = Math.hypot(player.x - px, player.z - pz);
+      if (d < bestD) { bestD = d; best = { x: px, z: pz, kind: 'car', name: car.spec.name, car }; }
+    }
+    for (const c of world.coverPoints ?? []) {
+      const d = Math.hypot(player.x - c.x, player.z - c.z) - (c.r ?? 0.3);
+      if (d < bestD) { bestD = d; best = { x: c.x, z: c.z, kind: c.kind, name: c.name }; }
+    }
+    return best;
+  }
+
+  /** Q / C: drop into low cover behind the nearest prop, or break cover. */
+  function toggleCover() {
+    if (player.inVehicle || player.dead) return null;
+    if (player.cover) {
+      player.cover = null;
+      bus.onCover?.(null);
+      return null;
+    }
+    const spot = findCover();
+    if (!spot) {
+      bus.notify?.('No cover within reach · get next to a car, bollard or barricade', 'warn', 1800);
+      return null;
+    }
+    player.cover = { ...spot, anchorX: player.x, anchorZ: player.z };
+    player.velocityX = 0;
+    player.velocityZ = 0;
+    bus.onCover?.(player.cover);
+    return player.cover;
+  }
+
+  /** Pin the player in cover for staged frames. */
+  function stageCover(spot, peek = 0) {
+    player.cover = { ...spot, anchorX: player.x, anchorZ: player.z };
+    player.peek = peek;
+  }
+
   function spawnTracer(x1, y1, z1, x2, y2, z2, color, life = 0.07) {
     tracers.push({ x1, y1, z1, x2, y2, z2, color, life, maxLife: life });
   }
@@ -456,12 +531,14 @@ export function createCombat(world, bus) {
 
   function fireOnce(weaponSpec, aim, muzzleBias = 0) {
     const pellets = weaponSpec.pellets ?? 1;
-    const spread = weaponSpec.spread ?? 0;
+    // Peek-to-fire from cover: a braced shooter halves the spread and widens the hit window.
+    const braced = !!player.cover;
+    const spread = (weaponSpec.spread ?? 0) * (braced ? 0.5 : 1);
     const baseX = player.x, baseZ = player.z;
     const yaw = aim + muzzleBias;
     const start = [
       baseX + Math.sin(yaw) * 0.8,
-      (player.y ?? 0) + 1.35,
+      (player.y ?? 0) + (braced ? (player.peek > 0.5 ? 1.18 : 1.0) : 1.35),
       baseZ + Math.cos(yaw) * 0.8,
     ];
     const dir = [Math.sin(yaw), 0.02 + (Math.random() - 0.5) * spread * 0.4, Math.cos(yaw)];
@@ -480,7 +557,7 @@ export function createCombat(world, bus) {
       const py = start[1] + dir[1] * along;
       const pz = start[2] + dir[2] * along;
       const miss = Math.hypot(px - enemy.x, py - (enemy.y + 1.1), pz - enemy.z);
-      const radius = 0.65 + spread * 22;
+      const radius = 0.65 + spread * 22 + (braced ? 0.2 : 0);
       if (miss < radius) {
         bestDist = along;
         bestEnemy = enemy;
@@ -585,6 +662,8 @@ export function createCombat(world, bus) {
 
   function hurtPlayer(amount, source) {
     if (player.dead) return;
+    // Low cover soaks most of the incoming fire; peeking out to shoot exposes more of you.
+    if (player.cover) amount *= player.peek > 0.5 ? 0.55 : 0.3;
     if (player.armor > 0) {
       const absorbed = Math.min(player.armor, amount * 0.7);
       player.armor -= absorbed;
@@ -626,9 +705,15 @@ export function createCombat(world, bus) {
     if (input.right) { mx += right[0]; mz += right[1]; }
     if (input.left) { mx -= right[0]; mz -= right[1]; }
     const mag = Math.hypot(mx, mz);
-    player.sprinting = !!input.sprint && mag > 0.1;
-    let speed = player.sprinting ? 8.4 : 4.9;
-    if (weapon()?.id !== 'fists' && input.aim) speed *= 0.72;
+    if (player.cover && ((input.sprint && mag > 0.1) || input.jump)) {
+      player.cover = null;
+      bus.onCover?.(null);
+    }
+    const inCover = !!player.cover;
+    player.peek = lerp(player.peek ?? 0, inCover && (input.aim || input.fire) ? 1 : 0, clamp(dt * 10, 0, 1));
+    player.sprinting = !inCover && !!input.sprint && mag > 0.1;
+    let speed = inCover ? 1.9 : player.sprinting ? 8.4 : 4.9;
+    if (!inCover && weapon()?.id !== 'fists' && input.aim) speed *= 0.72;
     if (mag > 0.001) {
       mx /= mag; mz /= mag;
       player.velocityX = lerp(player.velocityX, mx * speed, clamp(dt * 12, 0, 1));
@@ -647,7 +732,7 @@ export function createCombat(world, bus) {
     }
     // Jump.
     const ground = world.groundHeight(player.x, player.z);
-    if (input.jump && player.jumpY <= 0.01 && player.jumpVelocity <= 0.01) {
+    if (input.jump && !inCover && player.jumpY <= 0.01 && player.jumpVelocity <= 0.01) {
       player.jumpVelocity = 5.1;
       player.airborne = true;
     }
@@ -667,6 +752,11 @@ export function createCombat(world, bus) {
     player.x = clamp(player.x, world.bounds.minX + 4, world.bounds.maxX - 4);
     player.z = clamp(player.z, world.bounds.minZ + 4, world.bounds.maxZ - 4);
     player.y = world.groundHeight(player.x, player.z) + player.jumpY;
+    // Shuffling along cover is fine; stepping well clear of it breaks cover.
+    if (player.cover && Math.hypot(player.x - player.cover.x, player.z - player.cover.z) > 3.4) {
+      player.cover = null;
+      bus.onCover?.(null);
+    }
 
     // Aiming / firing.
     if (input.fire) {
@@ -704,9 +794,18 @@ export function createCombat(world, bus) {
       enemy.fireTimer -= dt;
       if (enemy.fireTimer <= 0 && dist < enemy.range) {
         enemy.fireTimer = (enemy.weapon === 'smg' ? 0.5 : 1.0) + Math.random() * 0.6;
-        const accuracy = clamp(0.78 - dist / 80, 0.28, 0.72);
-        const hit = Math.random() < accuracy;
         const startY = enemy.y + 1.35;
+        // Some rounds go at a crewmate laying down covering fire instead of the player.
+        const decoy = bus.crewDecoy?.(enemy);
+        if (decoy) {
+          spawnTracer(enemy.x, startY, enemy.z, decoy.x + (Math.random() - 0.5) * 1.6, decoy.y, decoy.z + (Math.random() - 0.5) * 1.6, rgb(0xff9a6a), 0.06);
+          spark(enemy.x, startY, enemy.z, PALETTE.gold, 2, 1.2);
+          bus.onEnemyShot?.(enemy);
+          continue;
+        }
+        const covered = player.cover && !player.inVehicle ? (player.peek > 0.5 ? 0.75 : 0.45) : 1;
+        const accuracy = clamp(0.78 - dist / 80, 0.28, 0.72) * covered;
+        const hit = Math.random() < accuracy;
         const endX = player.x + (Math.random() - 0.5) * (hit ? 0.5 : 2.2);
         const endZ = player.z + (Math.random() - 0.5) * (hit ? 0.5 : 2.2);
         spawnTracer(enemy.x, startY, enemy.z, endX, player.y + 1.2, endZ, rgb(0xff9a6a), 0.06);
@@ -773,8 +872,11 @@ export function createCombat(world, bus) {
   }
 
   function build(b, environment) {
-    // Player on foot.
+    // Player on foot: standing, or crouched in cover (kneeling low, rising to peek and fire).
     if (!player.inVehicle && !player.dead) {
+      const cover = !!player.cover;
+      const peek = player.peek ?? 0;
+      const armed = weapon().id !== 'fists';
       buildCharacter(b, {
         x: player.x, z: player.z, y: player.y,
         heading: player.heading,
@@ -782,9 +884,11 @@ export function createCombat(world, bus) {
         phase: player.walkPhase,
         speed: player.moving ? Math.hypot(player.velocityX, player.velocityZ) : 0,
         colors: player.colors,
-        aiming: !!environment?.aim,
-        weapon: environment?.aim && weapon().id !== 'fists' ? weapon().id : null,
+        aiming: !!environment?.aim || (cover && armed),
+        weapon: (environment?.aim || cover) && armed ? weapon().id : null,
         style: 'player',
+        duck: cover ? 0.45 + (1 - peek) * 0.4 : 0,
+        kneel: cover && peek < 0.5,
       }, time);
     }
     for (const enemy of enemies) {
@@ -886,8 +990,13 @@ export function createCombat(world, bus) {
     currentWeapon: () => weapon(),
     currentAmmo,
     spawnEnemy,
+    spawnTracer,
+    damageEnemy,
     clearEnemies,
     hurtPlayer,
+    findCover,
+    toggleCover,
+    stageCover,
     build,
     glow,
     addImpact,

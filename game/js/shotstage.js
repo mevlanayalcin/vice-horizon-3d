@@ -7,14 +7,22 @@
 import { PALETTE, rgb } from './config.js';
 import { createVehicle, skidMarks, tyreSmoke } from './vehicles.js';
 
-let world, traffic, police, combat, missions, activities, progression, hud, camera, game;
+let world, traffic, police, combat, missions, activities, progression, hud, camera, game, crew, turf;
 let parkedVehicles, random, setVehicle, setCameraAngles, setStageCity, openMenu;
 
 /** Wire photo mode to the live systems; returns the stage runner. */
 export function createShotStage(ctx) {
-  ({ world, traffic, police, combat, missions, activities, progression, hud, camera, game } = ctx);
+  ({ world, traffic, police, combat, missions, activities, progression, hud, camera, game, crew, turf } = ctx);
   ({ parkedVehicles, random, setVehicle, setCameraAngles, setStageCity, openMenu } = ctx);
   return { stage: stageShot, frame: stageFrame };
+}
+
+/** Crew and turf as they stand `done` jobs into the story. */
+function stageCareer(done, standing) {
+  crew.reset();
+  crew.syncStory(missions.state.done.map((_, i) => i < done), false);
+  turf.reset();
+  turf.stage(standing);
 }
 
 function setStageHour(hour) {
@@ -32,6 +40,9 @@ function clearScene() {
   tyreSmoke.length = 0;
   combat.player.dead = false;
   combat.player.inVehicle = null;
+  combat.player.cover = null;
+  crew.mateo.visible = false;
+  crew.mateo.staged = false;
   setVehicle(null);
   // A frozen frame would leave mid-crossing pedestrians standing in traffic: keep the kerbs.
   const kerbside = traffic.pedestrians.filter((ped) => {
@@ -268,22 +279,22 @@ function stageChase() {
 
   police.setWanted(4);
   police.setPeak(4);
-  // Two interceptors on the bumper, one swerving in from the oncoming lanes.
+  stageCareer(2, { palm: 52, harbor: 38, midtown: 24, hills: 6, key: 0 });
+  crew.mateo.status = 'RIDING SHOTGUN';
+  // Two interceptors on the bumper, a third closing from behind.
   const c1 = police.spawnStagedCruiser(134.5, 246.6, -Math.PI / 2 - 0.08);
   const c2 = police.spawnStagedCruiser(136.5, 256.8, -Math.PI / 2 + 0.1);
-  const c3 = police.spawnStagedCruiser(106, 256.5, Math.PI / 2 + 0.55);
-  const c4 = police.spawnStagedCruiser(68, 250, Math.PI / 2);
-  [c1, c2, c3, c4].forEach((c, i) => { c.sirenOn = true; c.remote = true; c.sirenPhase = i * 0.37; c.speed = 38; });
-  c3.braking = true;
+  const c4 = police.spawnStagedCruiser(166, 250, -Math.PI / 2);
+  [c1, c2, c4].forEach((c, i) => { c.sirenOn = true; c.remote = true; c.sirenPhase = i * 0.37; c.speed = 38; });
 
-  // Roadblock ahead: two cruisers in a V across the westbound lanes, officers on foot.
-  const r1 = police.spawnStagedCruiser(86, 247.5, Math.PI / 2 - 0.62, { roadblock: true });
-  const r2 = police.spawnStagedCruiser(84, 255, Math.PI / 2 + 0.62, { roadblock: true });
-  [r1, r2].forEach((c, i) => { c.sirenOn = true; c.braking = true; c.remote = true; c.sirenPhase = 0.6 + i * 0.3; });
-  traffic.addStagedPed(90.5, 244.6, Math.PI / 2, 'cop');
-  traffic.addStagedPed(89.5, 258.5, Math.PI / 2, 'cop');
-  // The air unit hovering over the boulevard, its searchlight pinning the supercar.
-  police.stageHelicopter({ x: 103, z: 249, y: 14.5, heading: Math.PI / 2 + 0.35, spotX: 126.5, spotZ: 251.2 });
+  // SBPD roadblock ahead: two cruisers nose-in in a V across the westbound lanes, striped
+  // barriers in the gaps, a fan of burning red flares on the asphalt, officers behind.
+  police.stageRoadblock(104, 250.6, Math.PI / 2, 1, 8.6, 'Ocean Boulevard');
+  traffic.addStagedPed(99.5, 244.4, Math.PI / 2, 'cop');
+  traffic.addStagedPed(99, 257.2, Math.PI / 2, 'cop');
+  // Air One hovering over the boulevard, its searchlight pinning the supercar.
+  police.stageHelicopter({ x: 112, z: 249, y: 15.5, heading: Math.PI / 2 + 0.35, spotX: 126.5, spotZ: 251.2 });
+  hud.dispatch('SBPD DISPATCH · AIR ONE', 'Roadblock set on Ocean Boulevard, flares down. Air One has the suspect in the light.', 0);
 
   stageCar('coupe', 60, 254, -Math.PI / 2, 18);
   stageCar('taxi', 112, 268, Math.PI / 2, 0);
@@ -386,6 +397,7 @@ function stageStart() {
   // Two stars for the stolen GT: a patrol cruiser closing on the rear quarter.
   police.setWanted(2);
   police.setPeak(2);
+  stageCareer(1, { palm: 34, harbor: 12, midtown: 8, hills: 0, key: 0 });
   const cop = police.spawnStagedCruiser(32, 247, -Math.PI / 2 - 0.07);
   cop.sirenOn = true; cop.remote = true; cop.speed = 33; cop.sirenPhase = 0.2;
 
@@ -442,15 +454,16 @@ function stagedSparks(x, y, z, count, spread = 0.5, color = rgb(0xffd27a)) {
   }
 }
 
-/** On foot in Neon Midtown: an over-the-shoulder firefight at the Solaris Vault plaza. */
+/** On foot in Neon Midtown: a cover firefight at the Solaris Vault plaza, Mateo alongside. */
 function stageFoot() {
   clearScene();
   setStageHour(19.72);
   missions.stage(2, 1, { banner: 'ACTIVE MISSION', done: 2 });
   hud.els.banner.classList.remove('show');
   careerPlayer({ cash: 31640, respect: 760, health: 81, armor: 55, mag: 22 });
+  stageCareer(2, { palm: 52, harbor: 38, midtown: 24, hills: 6, key: 0 });
   const p = combat.player;
-  const px = 61.6, pz = 1.6;
+  const px = 63.4, pz = 0.3;
   combinePlayerOnFoot(px, pz, Math.PI + 0.3);
   p.health = 81;
   p.armor = 55;
@@ -463,34 +476,49 @@ function stageFoot() {
   for (const [x, z, weapon] of spots) combat.spawnEnemy(x, z, { health: 85, style: 'guard', weapon, stationary: true, mission: true });
   combat.enemies.forEach((e) => { e.heading = Math.atan2(px - e.x, pz - e.z); e.phase = 0; });
   combat.enemies[0].hitFlash = 0.25;
+  combat.enemies[3].hitFlash = 0.2;
 
-  // The player's SMG burst at the nearest guard, his rounds sparking off the barricade.
-  const gy = 1.42;
-  const yaw = stagedShot(px, pz, 53.9, -18.0, gy, gy - 0.1, rgb(0xffe6a8), 0.42, { flashSize: 0.62 });
-  stagedShot(px, pz, 54.6, -18.9, gy, gy - 0.3, rgb(0xfff2c8), 0.83, { flash: false });
+  // Cover: the stealable teal muscle car broadside at the kerb, the bank's armoured van beyond.
+  const muscle = stageCar('muscle', 65.6, -1.5, Math.PI / 2 + 0.08, 0, { color: rgb(0x1f9e8f) });
+  stageCar('van', 86.5, -8.4, -Math.PI / 2, 0, { color: rgb(0x3a4250) });
+  stageCar('coupe', 38, 7.5, Math.PI / 2, 0, { color: rgb(0xff5a3c) });
+  // The player down in low cover at the car's tail, rising over the boot to fire.
+  combat.stageCover({ x: px, z: -0.6, kind: 'car', name: muscle.spec.name, car: muscle }, 0.2);
+
+  // The player's SMG burst over the boot at the nearest guard, sparking off the barricade.
+  const gy = 1.02;
+  const yaw = stagedShot(px, pz, 53.9, -18.0, gy, gy + 0.1, rgb(0xffe6a8), 0.42, { flashSize: 0.62 });
+  stagedShot(px, pz, 54.6, -18.9, gy, gy - 0.1, rgb(0xfff2c8), 0.83, { flash: false });
   p.aimYaw = yaw;
-  p.heading = yaw + 0.25;
+  p.heading = yaw + 0.2;
+
+  // Mateo kneeling off the car's nose in his plate carrier, laying covering bursts on the guards.
+  const mx = 69.4, mz = -0.3;
+  const myaw = Math.atan2(82.2 - mx, -14.2 - mz);
+  crew.stageMateo({ x: mx, z: mz, heading: myaw, aimYaw: myaw, crouch: 0.62, status: 'COVERING FIRE' });
+  const my = 1.0;
+  stagedShot(mx, mz, 82.0, -14.6, my, 1.3, rgb(0x9ff3ff), 0.38, { flashSize: 0.58 });
+  stagedShot(mx, mz, 82.6, -13.6, my, 1.2, rgb(0xc8faff), 0.78, { flash: false });
+  stagedShot(mx, mz, 72.6, -22.6, my, 1.25, rgb(0x9ff3ff), 0.62, { flash: false });
+  stagedSparks(82.2, 1.3, -14.6, 6, 0.35, rgb(0xbff6ff));
+
   // Return fire: guard muzzle stars and orange streaks cracking past toward the car.
-  stagedShot(72.4, -23.2, 64.6, -0.6, 1.4, 1.05, rgb(0xff9a5a), 0.62, { flashSize: 0.55, reach: 0.7 });
-  stagedShot(61.4, -32.6, 63.3, -1.0, 1.4, 1.1, rgb(0xff8a4a), 0.74, { flashSize: 0.5, reach: 0.7 });
-  stagedShot(82.2, -14.2, 66.8, -0.4, 1.4, 1.0, rgb(0xffa060), 0.35, { flashSize: 0.45, reach: 0.7 });
+  stagedShot(72.4, -23.2, 64.6, -1.4, 1.4, 1.05, rgb(0xff9a5a), 0.62, { flashSize: 0.55, reach: 0.7 });
+  stagedShot(61.4, -32.6, 63.3, -1.8, 1.4, 1.1, rgb(0xff8a4a), 0.74, { flashSize: 0.5, reach: 0.7 });
+  stagedShot(45.5, -27.5, 66.8, -1.2, 1.4, 1.0, rgb(0xffa060), 0.35, { flashSize: 0.45, reach: 0.7 });
   // Brass casings tumbling out to the right of the gun.
   for (let i = 0; i < 4; i += 1) {
     combat.particles.push({
-      x: px + 0.45 + i * 0.2, y: 1.55 + i * 0.16 - (i > 2 ? 0.7 : 0), z: pz - 0.2 + i * 0.1, vx: 0, vy: 0, vz: 0,
+      x: px + 0.45 + i * 0.2, y: 1.2 + i * 0.14 - (i > 2 ? 0.5 : 0), z: pz - 0.2 + i * 0.1, vx: 0, vy: 0, vz: 0,
       life: 999, maxLife: 999, color: rgb(0xd9a441), size: 0.3, gravity: 0, casing: true, spin: i * 1.7,
     });
   }
-  // Rounds sparking off the muscle car's hood and the striped barricade.
-  stagedSparks(64.4, 1.15, -0.6, 6, 0.35);
-  stagedSparks(66.6, 1.1, -0.4, 3, 0.3);
+  // Rounds sparking off the muscle car's roof and the striped barricade.
+  stagedSparks(64.4, 1.3, -1.4, 6, 0.35);
+  stagedSparks(66.6, 1.25, -1.2, 3, 0.3);
   stagedSparks(54.7, 1.0, -18.8, 7, 0.4);
   combat.addImpact(54.6, 1.3, -18.4, PALETTE.gold, 999);
 
-  // Cover: the stealable muscle car broadside at the kerb, the bank's armoured van beyond.
-  stageCar('muscle', 65.6, -1.5, Math.PI / 2 + 0.08, 0, { color: rgb(0x1f9e8f) });
-  stageCar('van', 86.5, -8.4, -Math.PI / 2, 0, { color: rgb(0x3a4250) });
-  stageCar('coupe', 38, 7.5, Math.PI / 2, 0, { color: rgb(0xff5a3c) });
   // Heat arriving: one cruiser swinging in off the cross street.
   police.setWanted(2);
   police.setPeak(3);
@@ -502,10 +530,10 @@ function stageFoot() {
   traffic.addStagedPed(96, -2, 2.6, 'civ', { panic: 3, panicArms: true });
   traffic.addStagedPed(56.5, -7.5, 2.4, 'civ', { panic: 3, duck: 1, longHair: true });
   for (const [x, z, h] of [[30, 14, Math.PI / 2], [104, 15, -Math.PI / 2]]) strollPed(x, z, h);
-  hud.dialogue('MATEO', 'Drop the vault guards, then take the teal muscle car. Keys are in it.', 120000);
-  // Tight over-the-shoulder camera, right of the player, low behind the car's tail.
-  camera.pos = [px + 1.9, 2.55, pz + 5.4];
-  camera.target = [px + 1.4, 1.3, pz - 30];
+  hud.dialogue('MATEO', 'Stay low behind the muscle car. I\'ve got the guards on the right. Peek and fire.', 120000);
+  // Low over-the-shoulder camera behind the player's cover, Mateo framed to the right.
+  camera.pos = [px + 0.6, 2.75, pz + 7.8];
+  camera.target = [px + 2.6, 0.95, pz - 30];
   camera.fov = 54;
 }
 
@@ -525,6 +553,8 @@ function stageMenu() {
   activities.state.bestStreak = 3;
   progression.state.paint = 'lagoon';
   progression.state.neon = 'pink';
+  stageCareer(2, { palm: 72, harbor: 46, midtown: 38, hills: 14, key: 6 });
+  crew.mateo.status = 'RIDING SHOTGUN';
   const hero = driveHero('supercar', 132, 120, Math.PI, 0, { body: rgb(0x27e2d2), accent: rgb(0xff3f95) });
   const p = combat.player;
   p.x = hero.x; p.z = hero.z; p.heading = hero.heading;

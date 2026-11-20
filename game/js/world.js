@@ -27,6 +27,8 @@ export function createWorld(renderer) {
   const landmarks = [];
   const hydrants = [];
   const lampposts = [];
+  // Low cover the player can crouch behind with Q / C (cars are added live by main.js).
+  const coverPoints = [];
   let hotelCount = 0;
   let lifeguardCount = 0;
   let shopCount = 0;
@@ -1452,6 +1454,8 @@ export function createWorld(renderer) {
     addArtDecoHotel(-118, 202, 46, 30, rgb(0xf7cdb0), PALETTE.neonPink, 'MIRAMAR');
     // Safehouse garage.
     addSafehouse();
+    // Story-job set dressing: harbor crane relays, the Casa Hills villa safe, Key cargo.
+    addMissionProps();
     // Hills backdrop: layered ridges behind the houses.
     const h = builder('hills');
     for (let i = 0; i < 9; i += 1) {
@@ -1558,6 +1562,7 @@ export function createWorld(renderer) {
       if (Math.abs(x - cx) < 4) continue;
       b.cylinder(x, 0.08, -13.4, 0.24, 0.22, 0.95, 10, rgb(0x4a4c55), { s: -0.4 });
       b.cylinder(x, 1.03, -13.4, 0.23, 0.18, 0.12, 10, PALETTE.gold, { e: 0.9 });
+      coverPoints.push({ x, z: -13.4, r: 0.25, kind: 'bollard', name: 'Bollard' });
     }
     // Striped tactical barricades angled across the plaza.
     const stripe = [PALETTE.white, PALETTE.policeRed];
@@ -1572,6 +1577,7 @@ export function createWorld(renderer) {
         b.box(x + u * c, 0.06, z - u * s, 0.16, 0.12, 0.9, rgb(0x2a2c33), { rotY: rot, omitBottom: true });
       }
       glow(x + 1.8 * c, 1.08, z - 1.8 * s, PALETTE.neonAmber, 0.5, 0.8);
+      for (const u of [-1.2, 0, 1.2]) coverPoints.push({ x: x + u * c, z: z - u * s, r: 0.3, kind: 'barricade', name: 'Barricade' });
     }
     // Gold loot: bullion crates and briefcases stacked on the steps by the armoured van.
     for (const [x, z, w, h, d] of [[78.5, -36.2, 1.3, 0.75, 0.9], [80.1, -36.0, 1.2, 0.6, 0.9], [79.2, -36.1, 1.0, 0.55, 0.8]]) {
@@ -1591,8 +1597,51 @@ export function createWorld(renderer) {
       b.ellipsoid(x, 1.7, -31, 1.4, 0.9, 1.4, PALETTE.palm, { segments: 8, rings: 4 });
       b.ellipsoid(x + 0.4, 2.3, -31.3, 0.8, 0.7, 0.8, PALETTE.palmLight, { segments: 7, rings: 4 });
       glow(x, 1.2, -29.3, PALETTE.neonAmber, 1.6, 0.4);
+      coverPoints.push({ x, z: -31, r: 1.5, kind: 'planter', name: 'Planter' });
     }
     landmarks.push({ name: 'Solaris Vault Plaza', x: cx, z: -27 });
+  }
+
+  /**
+   * Fixed props the later story jobs play around: two crane-yard relay cabinets in the
+   * Harbor Docks (Crane Light Blackout), the stone garden safe behind a Casa Hills villa
+   * gate (Casa Hills Hush), and a stack of yacht cargo by the Starlight Key slips.
+   */
+  function addMissionProps() {
+    const hb = builder('harbor');
+    const steel = rgb(0x3d4a4f), dark = rgb(0x1d2326);
+    for (const [x, z] of [[-380, -264.5], [-320, -264.5]]) {
+      hb.box(x, 1.05, z, 1.5, 2.1, 0.8, steel, { omitBottom: true, s: -0.3 });
+      hb.box(x, 2.16, z, 1.66, 0.12, 0.96, dark, { omitBottom: true });
+      hb.box(x, 1.25, z + 0.41, 1.1, 0.9, 0.04, rgb(0x0e1416), { omitBottom: true });
+      for (let i = 0; i < 3; i += 1) hb.box(x - 0.35 + i * 0.35, 1.5, z + 0.44, 0.16, 0.08, 0.03, i === 1 ? PALETTE.neonAmber : PALETTE.neonCyan, { e: 1, omitBottom: true });
+      hb.box(x, 1.05, z + 0.44, 0.7, 0.1, 0.03, rgb(0xff4c5f), { e: 0.9, omitBottom: true });
+      // Conduit running up to the crane gantry.
+      hb.box(x + 0.62, 4.2, z - 0.2, 0.14, 8.4, 0.14, dark, { omitBottom: true });
+      glow(x, 1.6, z + 0.9, PALETTE.neonAmber, 1.4, 0.45);
+      collider(x - 0.75, x + 0.75, z - 0.4, z + 0.4, 'prop');
+      coverPoints.push({ x, z, r: 0.8, kind: 'relay', name: 'Relay cabinet' });
+    }
+    const hill = builder('hills');
+    const stucco = rgb(0xf3d7c0), terracotta = rgb(0xc8674a);
+    // Villa gate piers and a low garden wall either side of the safe.
+    for (const sx of [-9, 9]) {
+      hill.box(130 + sx, 1.3, -420, 1.2, 2.6, 1.2, stucco, { omitBottom: true });
+      hill.box(130 + sx, 2.7, -420, 1.4, 0.2, 1.4, terracotta, { omitBottom: true });
+      glow(130 + sx, 2.95, -420, PALETTE.neonAmber, 1.2, 0.5);
+      hill.box(130 + sx * 1.9, 0.6, -420, 9, 1.2, 0.6, stucco, { omitBottom: true });
+      collider(130 + sx - 0.6, 130 + sx + 0.6, -420.6, -419.4, 'prop');
+      coverPoints.push({ x: 130 + sx, z: -420, r: 0.7, kind: 'wall', name: 'Gate pier' });
+    }
+    hill.box(130, 0.55, -433.2, 1.6, 1.1, 1.0, rgb(0x5a5f66), { omitBottom: true, s: -0.5 });
+    hill.cylinder(130, 0.6, -432.66, 0.24, 0.24, 0.06, 10, PALETTE.gold, { e: 0.6 });
+    const kb = builder('marina');
+    for (const [x, z, h] of [[702, 126, 0], [703.4, 127.6, 0], [702.6, 126.8, 0.9]]) {
+      kb.box(x, 0.45 + h, z, 1.3, 0.9, 1.0, rgb(0x2c5b6a), { omitBottom: true });
+      kb.box(x, 0.92 + h, z, 1.34, 0.06, 1.04, PALETTE.neonCyan, { e: 0.5, omitBottom: true });
+    }
+    coverPoints.push({ x: 702.6, z: 126.8, r: 1.0, kind: 'crates', name: 'Cargo stack' });
+    landmarks.push({ name: 'Crane Relay Yard', x: -350, z: -262 });
   }
 
   function addSafehouse() {
@@ -1758,6 +1807,8 @@ export function createWorld(renderer) {
 
   function districtName(x, z) {
     if (z > 302) return 'Coral Beach';
+    // The island past the causeway is its own district, though it shares the marina's styling.
+    if (x > 540 && z > 60 && z < 310) return 'Starlight Key';
     const d = districtAt(x, z);
     const found = DISTRICTS.find((item) => item.id === d || (d === 'commercial' && item.id === 'midtown'));
     return found ? found.name : 'Solaris Bay';
@@ -1802,6 +1853,7 @@ export function createWorld(renderer) {
     props,
     hydrants,
     lampposts,
+    coverPoints,
     map,
     landmarks,
     safehouse: SAFEHOUSE,

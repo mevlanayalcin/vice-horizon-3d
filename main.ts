@@ -1,10 +1,10 @@
 // SOLARIS BAY — a gta6-01 entry (Node 22, standard library only).
 //
 // The game itself is this directory's game/ folder: plain static files a desktop browser
-// serves offline — game/index.html, one stylesheet and twenty-three authored ES modules under
+// serves offline — game/index.html, one stylesheet and twenty-five authored ES modules under
 // game/js/ (config, daycycle, renderer3d, postfx, meshkit, signage, world, vehicles,
-// traffic, police, combat, missions, activities, progression, scene, camera, minimap, hud,
-// citymenu, audio, save, shotstage and main). No library, no build step and no network
+// traffic, police, combat, crew, turf, missions, activities, progression, scene, camera,
+// minimap, hud, citymenu, audio, save, shotstage and main). No library, no build step and no network
 // request: the city, every car, character, sign, shader and sound is generated in code.
 //
 // This program is the plumbing the bounty asks for. It copies game/ and screenshots/ from

@@ -1,7 +1,8 @@
 // scene.js — the per-frame dynamic scene. Everything that moves is rebuilt into one
 // mesh each frame: cars with their light halos and contact shadows, pedestrians, the
 // player and gangs with tracers and sparks, mission crates, sun tokens, pickups, the
-// gold mission beacon, cyan activity rings and the police helicopter's searchlight.
+// gold mission beacon, cyan activity rings, the police helicopter's searchlight, SBPD
+// roadblock barriers and burning road flares, the crew pointman and hack relay rings.
 
 import { PALETTE, SAFEHOUSE, TAU, rgb, shade } from './config.js';
 import { MeshBuilder } from './meshkit.js';
@@ -11,7 +12,7 @@ import { buildCharacter } from './combat.js';
 /** Build the frame's dynamic geometry, glow sprites and blob shadows. */
 export function buildDynamicScene(ctx) {
   const {
-    time, camera, env, world, traffic, combat, missions, activities, police,
+    time, camera, env, world, traffic, combat, missions, activities, police, crew,
     tokens, pickups, vehicles, playerVehicle, aiming, showSafehouse,
   } = ctx;
   const b = new MeshBuilder(60000);
@@ -142,12 +143,75 @@ export function buildDynamicScene(ctx) {
     }
   }
 
-  // Player + enemies + tracers/particles.
+  // Player + crew + enemies + tracers/particles.
   combat.build(b, { aim: !playerVehicle && aiming });
+  if (crew) { crew.build(b, time); crew.shadow(shadows); }
   if (!playerVehicle && !p.dead) {
     shadows.push({ x: p.x, z: p.z, y: (p.y ?? 0) + 0.03, rx: 0.6, rz: 0.6, alpha: 0.3 });
   }
   combat.glow(time, addGlow);
+
+  // SBPD roadblocks: striped sawhorse barriers with amber blinkers and burning road flares.
+  const flareRed = rgb(0xff2a1e), flareHot = rgb(0xffb08a);
+  const stripes = [PALETTE.white, PALETTE.policeRed];
+  const legDark = rgb(0x24272d);
+  for (const block of police.roadblocks ?? []) {
+    const dx = block.x - camX, dz = block.z - camZ;
+    if (dx * dx + dz * dz > 260 * 260) continue;
+    for (const bar of block.barriers) {
+      const k = bar.knocked ? Math.min(1, bar.tilt / 1.5) : 0;
+      const rot = bar.rot + k * 0.9;
+      const c = Math.cos(rot), s = Math.sin(rot);
+      const gy = world.groundHeight(bar.x, bar.z);
+      const boardY = gy + 0.06 + (1 - k) * 0.84;
+      for (const row of [0, 1]) {
+        const y = boardY - row * 0.36 * (1 - k);
+        for (let i = 0; i < 6; i += 1) {
+          const u = (i - 2.5) * 0.6;
+          b.box(bar.x + u * c + s * row * 0.02 * k, y, bar.z - u * s + c * row * 0.4 * k, 0.6, 0.24, 0.07, stripes[(i + row) % 2], { rotY: rot, omitBottom: true, e: 0.16 });
+        }
+      }
+      if (!bar.knocked) {
+        for (const u of [-1.55, 1.55]) {
+          const lx = bar.x + u * c, lz = bar.z - u * s;
+          // A-frame legs splayed fore and aft of the boards.
+          for (const f of [-1, 1]) b.segment([lx, gy + 0.98, lz], [lx + s * f * 0.42, gy + 0.02, lz + c * f * 0.42], 0.05, 0.05, legDark);
+          b.box(lx, gy + 1.06, lz, 0.16, 0.12, 0.16, PALETTE.neonAmber, { e: 1, omitBottom: true });
+          const blink = 0.45 + 0.55 * (Math.sin(time * 6 + u + bar.x) > 0 ? 1 : 0.2);
+          addGlow(lx, gy + 1.1, lz, PALETTE.neonAmber, 0.7, 0.7 * blink);
+        }
+      }
+      shadows.push({ x: bar.x, z: bar.z, y: gy + 0.035, rx: 1.9, rz: 0.35, alpha: 0.32, rot: rot + Math.PI / 2 });
+    }
+    for (const f of block.flares) {
+      const gy = world.groundHeight(f.x, f.z);
+      const flick = (0.78 + 0.22 * Math.sin(time * 23 + f.phase) * Math.sin(time * 7.3 + f.phase * 2)) * f.life;
+      b.box(f.x, gy + 0.05, f.z, 0.07, 0.07, 0.34, rgb(0x8c1d18), { rotY: f.phase, omitBottom: true });
+      const tx = f.x + Math.sin(f.phase) * 0.17, tz = f.z + Math.cos(f.phase) * 0.17;
+      b.box(tx, gy + 0.07, tz, 0.09, 0.09, 0.09, flareHot, { e: 1, omitBottom: true });
+      addGlow(tx, gy + 0.14, tz, flareHot, 0.32, 0.95 * flick);
+      addGlow(tx, gy + 0.2, tz, flareRed, 1.4, 0.85 * flick);
+      addGlow(tx, gy + 0.04, tz, flareRed, 5.2, 0.5 * flick, { sx: 1, sz: 1 });
+      addGlow(tx, gy + 0.9 + Math.sin(time + f.phase) * 0.1, tz, rgb(0xff6a5a), 0.9, 0.12 * flick);
+    }
+  }
+
+  // An active hack step: Elena's splice ring filling around the relay.
+  const hack = missions.hackSpot;
+  if (hack) {
+    const gy = world.groundHeight(hack.x, hack.z);
+    const ring = [], radii = [], fill = [], fillR = [];
+    const n = 48;
+    for (let i = 0; i <= n; i += 1) {
+      const a = (i / n) * TAU - Math.PI / 2;
+      ring.push([hack.x + Math.cos(a) * hack.radius * 0.6, gy + 0.14, hack.z + Math.sin(a) * hack.radius * 0.6]);
+      radii.push(0.05);
+      if (i / n <= hack.progress) { fill.push([hack.x + Math.cos(a) * hack.radius * 0.6, gy + 0.17, hack.z + Math.sin(a) * hack.radius * 0.6]); fillR.push(0.12); }
+    }
+    b.tube(ring, radii, 4, rgb(0x3a5a66), { e: 0.5 });
+    if (fill.length > 1) b.tube(fill, fillR, 4, PALETTE.neonPink, { e: 1 });
+    addGlow(hack.x, gy + 0.2, hack.z, PALETTE.neonPink, hack.radius * 0.9, 0.3 + hack.progress * 0.3, { sx: 1, sz: 1 });
+  }
 
   // Mission crates.
   for (const crate of missions.crates) {
