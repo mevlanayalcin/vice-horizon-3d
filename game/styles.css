@@ -290,18 +290,30 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
   border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 14px; overflow: hidden;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55); backdrop-filter: blur(12px);
 }
-.cm-head { display: flex; align-items: center; gap: 22px; padding: 12px 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+.cm-head { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
 .cm-brand { display: flex; flex-direction: column; }
 .cm-logo { font-family: var(--display); font-size: 20px; letter-spacing: -0.02em; color: #ffe1ad; }
 .cm-logo b { font-size: 12px; letter-spacing: 0.3em; margin-left: 7px; color: var(--gold); }
 .cm-sub { font-size: 8.5px; letter-spacing: 0.15em; color: var(--muted); font-weight: 800; text-transform: uppercase; }
 .cm-tabs { display: flex; gap: 4px; flex: 1; justify-content: center; }
 .cm-tabs button {
-  pointer-events: auto; cursor: pointer; font: inherit; font-size: 10px; font-weight: 800; letter-spacing: 0.18em;
-  color: #c9d2d8; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 7px 14px;
+  pointer-events: auto; cursor: pointer; font: inherit; font-size: 10px; font-weight: 800; letter-spacing: 0.14em; white-space: nowrap;
+  color: #c9d2d8; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 7px 10px;
 }
 .cm-tabs button.on { color: #1a1005; background: var(--gold); box-shadow: 0 0 16px rgba(255, 194, 75, 0.45); }
 .cm-wallet { text-align: right; }
+.cm-save {
+  pointer-events: auto; cursor: pointer; font: inherit; text-align: left; white-space: nowrap; display: flex; flex-direction: column; gap: 2px;
+  padding: 5px 10px 5px 22px; border-radius: 7px; position: relative; color: #e8f6f2;
+  background: rgba(125, 255, 176, 0.07); border: 1px solid rgba(125, 255, 176, 0.35);
+}
+.cm-save::before { content: ''; position: absolute; left: 9px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: #7dffb0; box-shadow: 0 0 8px #7dffb0; }
+.cm-save span { font-size: 7px; letter-spacing: 0.18em; color: var(--muted); font-weight: 800; }
+.cm-save b { font-size: 10px; letter-spacing: 0.12em; font-weight: 900; color: #7dffb0; }
+.cm-save:hover, .cm-save.on { background: rgba(125, 255, 176, 0.16); border-color: #7dffb0; }
+.cm-saves li { padding: 5px 0; }
+.cm-saves .cm-slot-name { color: #e8e4da; font-weight: 800; }
+.cm-slot-btns { display: flex; gap: 5px; flex: none; }
 .cm-wallet span { display: block; font-size: 7.5px; letter-spacing: 0.2em; color: var(--muted); font-weight: 800; }
 .cm-wallet b { font-family: var(--display); font-size: 22px; color: #7dffb0; }
 .cm-body { flex: 1; display: grid; grid-template-columns: 1fr 400px; min-height: 0; }

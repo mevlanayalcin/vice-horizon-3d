@@ -1,28 +1,45 @@
-// main.js — boot, the fixed 60 Hz loop, input, follow camera and the title / play /
-// pause / city-menu state machine. It wires the renderer, city, traffic, police,
-// combat and cover, crew, turf, missions, side activities, progression, audio, HUD,
-// city menu, named save slots and photo mode together; nothing here reaches the network.
+// main.js — SOLARIS BAY: boot, the fixed 60 Hz loop, input, the follow camera and the
+// title / play / pause / city-menu state machine. Nothing here or below reaches the network.
+//
+// Subsystems, one module each (all plain ES modules under game/js/):
+//   missions.js     eight-job story arc across five districts: steps, dialogue, rewards
+//   turf.js         five-district standing (CONTESTED to CONTROLLED), cash per minute, garage discount
+//   save.js         three named localStorage slots plus an autosave; manual save, load and delete
+//   progression.js  five street ranks, garage upgrades, Paint Shop colours, neon underglow, collection
+//   activities.js   street races, Coral Courier, Sun Cab fares, stunt ramps, medals and streaks
+//   citymenu.js     M / Tab city map with District Standing, story, crew, activities, garage, stats, saves
+//   police.js       five-star SBPD response: chasing cruisers, officers, roadblocks, flares, Air One chopper
+//   crew.js         Elena (comms perks) and Mateo (on-foot wingman with covering fire)
+//   combat.js       fists, pistol, SMG, shotgun; Q / C low cover with peek-and-fire; characters
+//   vehicles.js     clearcoat car meshes, handling, nitro, handbrake drift, tyre smoke; theft in main.js
+//   traffic.js      ambient cars that yield to sirens and pedestrians that cower or flee
+//   audio.js        procedural WebAudio: three FM stations, engine, sirens, dispatch, gunfire
+//   hud.js, minimap.js  HUD clusters, vector minimap with GPS route and police vision cones
+//   renderer3d.js, postfx.js, world.js  WebGL2 planar reflections, bloom, god rays; seven-district coastal city
+// Controls: WASD move or drive · mouse aim, left click fire · E / F steal or leave a car · Space jump /
+// handbrake · Shift sprint / nitro · Q / C cover · 1-4 weapons · X reload · T crew · R radio · H horn ·
+// M / Tab city menu · Esc or P pause to save and load.
 
 import { PALETTE, SAFEHOUSE, STEP, clamp, createRandom, lerp } from './config.js';
-import { createRenderer, cross3, normalize3 } from './renderer3d.js';
-import { createWorld } from './world.js';
-import { envAtHour, timeNameAt, clockAt } from './daycycle.js';
+import { createMissions, MISSIONS } from './missions.js';
+import { createTurf } from './turf.js';
+import { createSave, snapshot, applySnapshot, slotTime } from './save.js';
+import { createProgression } from './progression.js';
+import { createActivities } from './activities.js';
+import { createCameraRig } from './camera.js';
+import { createCityMenu } from './citymenu.js';
+import { createPolice } from './police.js';
+import { createCrew } from './crew.js';
+import { createCombat } from './combat.js';
 import { createVehicle, updateVehicle, tickTyreFx, skidMarks, tyreSmoke } from './vehicles.js';
 import { createTraffic } from './traffic.js';
-import { createPolice } from './police.js';
-import { createCombat } from './combat.js';
-import { createMissions, MISSIONS } from './missions.js';
-import { createActivities } from './activities.js';
-import { createProgression } from './progression.js';
-import { buildDynamicScene } from './scene.js';
-import { createCameraRig } from './camera.js';
 import { createAudio } from './audio.js';
 import { createHud } from './hud.js';
-import { createCityMenu } from './citymenu.js';
+import { envAtHour, timeNameAt, clockAt } from './daycycle.js';
+import { buildDynamicScene } from './scene.js';
 import { createShotStage } from './shotstage.js';
-import { createSave, snapshot, applySnapshot, slotTime } from './save.js';
-import { createCrew } from './crew.js';
-import { createTurf } from './turf.js';
+import { createRenderer, cross3, normalize3 } from './renderer3d.js';
+import { createWorld } from './world.js';
 
 const canvas = document.getElementById('game');
 const params = new URLSearchParams(window.location.search);
@@ -169,7 +186,12 @@ const crew = createCrew({ world, combat, police, bus });
 const missions = createMissions({ world, combat, police, bus, turf });
 const progression = createProgression({ combat, bus, turf });
 const activities = createActivities({ combat, bus, progression, turf });
-const cityMenu = createCityMenu({ painter: hud.painter, missions, activities, progression, combat, police, crew, turf });
+// The manual slot this session last saved to or loaded from; the city menu's save pill names it.
+let activeSlot = '1';
+const cityMenu = createCityMenu({
+  painter: hud.painter, missions, activities, progression, combat, police, crew, turf,
+  saves: () => ({ list: game.stagedSaves ?? save.list(), active: activeSlot, time: slotTime }),
+});
 
 const game = {
   renderer, world, audio, combat, traffic, police, missions, activities, progression, hud, save, crew, turf,
@@ -395,6 +417,8 @@ function loadSlot(slot) {
   rig.yaw = Math.PI;
   rig.pitch = 0.17;
   deathHandled = false;
+  if (slot !== 'auto') activeSlot = slot;
+  cityMenu.hide();
   mode = 'playing';
   hud.showPause(false);
   hud.showSlots(false);
@@ -496,11 +520,14 @@ function handleAction(action, data) {
       break;
     case 'saveSlot': {
       if (save.write(data.slot, snapshot(game))) {
+        activeSlot = data.slot;
+        game.stagedSaves = null;
         hud.notify(`Saved to slot ${data.slot}`, 'mission', 2500);
       } else {
         hud.notify('Could not save (storage blocked)', 'warn', 3000);
       }
       refreshPauseSlots();
+      if (cityMenu.open) cityMenu.render(liveMapState());
       refreshTitle();
       break;
     }

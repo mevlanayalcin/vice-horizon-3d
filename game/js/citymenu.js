@@ -3,8 +3,10 @@
 // the crew roster (deploy / stand down, perks, live status) with turf detail, side
 // activities (medals, personal bests and the live streak multiplier), the Safehouse Garage
 // (upgrades bought with cash and discounted by turf, the Paint Shop and neon underglow
-// selectors, the stolen-car collection) and lifetime stats with the rank ladder's milestone
-// rewards. Opening it pauses the city; buttons route through the HUD's data-action
+// selectors, the stolen-car collection), the save slots (three manual slots plus the
+// autosave, save / load from the menu) and lifetime stats with the rank ladder's milestone
+// rewards. A save pill beside the cash shows the active slot and the last autosave and jumps
+// to the SAVES tab. Opening it pauses the city; buttons route through the HUD's data-action
 // handler to main.js.
 
 import { MISSIONS } from './missions.js';
@@ -17,7 +19,7 @@ const money = (n) => `$${Number(Math.round(n)).toLocaleString('en-US')}`;
 const hexCss = (hex) => `#${hex.toString(16).padStart(6, '0')}`;
 const districtLabel = (id) => (TURF.find((d) => d.id === id) ?? DISTRICTS.find((d) => d.id === id))?.name ?? '';
 
-export function createCityMenu({ painter, missions, activities, progression, combat, police, crew, turf }) {
+export function createCityMenu({ painter, missions, activities, progression, combat, police, crew, turf, saves }) {
   const root = document.getElementById('cityMenu');
   const canvas = document.getElementById('cityMapCanvas');
   const side = document.getElementById('cmSide');
@@ -163,8 +165,40 @@ export function createCityMenu({ painter, missions, activities, progression, com
     return `${rankCard()}<div class="cm-card"><h4>CAREER</h4><div class="cm-stats">${rows}</div></div><div class="cm-card"><h4>STREET RANKS<em>MILESTONE REWARDS</em></h4><ul class="cm-list">${ladder}</ul></div>`;
   }
 
+  /** The header pill: active manual slot, last autosave time and the slot count. */
+  function savePill() {
+    const pill = document.getElementById('cmSave');
+    if (!pill || !saves) return;
+    const { list, active, time } = saves();
+    const auto = list.find((s) => s.slot === 'auto');
+    const used = list.filter((s) => s.slot !== 'auto' && s.exists).length;
+    const status = auto?.exists ? `AUTO-SAVED ${time(auto.savedAt).split(' ').pop()}` : 'NOT SAVED YET';
+    pill.querySelector('b').textContent = `SLOT ${active} · ${status}`;
+    pill.querySelector('span').textContent = `3 SAVE SLOTS · ${used} USED`;
+    pill.classList.toggle('on', tab === 'saves');
+  }
+
+  /** SAVES tab: the autosave and the three named slots, each saveable and loadable here. */
+  function savesDetail() {
+    const { list, active, time } = saves();
+    const rows = list.map((s) => {
+      const manual = s.slot !== 'auto';
+      const meta = s.exists
+        ? `<small>${s.district} · ${s.progress}/${s.total} jobs${s.storyComplete ? ' · complete' : ''} · ${money(s.cash)}${s.crew.length ? ` · crew ${s.crew.map((id) => id[0].toUpperCase() + id.slice(1)).join(' & ')}` : ''}</small><small>${time(s.savedAt)}</small>`
+        : `<small>${manual ? 'Empty · save here to keep this run' : 'Written on every new game, finished job and garage restyle'}</small>`;
+      const mark = manual ? s.slot : 'A';
+      const tag = manual && s.slot === active ? '<i class="cm-pb">ACTIVE</i>' : '';
+      const buttons = `${manual ? `<button data-action="saveSlot" data-slot="${s.slot}">${s.exists ? 'OVERWRITE' : 'SAVE'}</button>` : ''}<button data-action="loadSlot" data-slot="${s.slot}" ${s.exists ? '' : 'disabled'}>LOAD</button>`;
+      return `<li><span class="st ${s.exists ? 'done' : 'locked'}">${mark}</span><span class="nm">${s.label}${tag}${s.exists ? `<small class="cm-slot-name">${s.name}</small>` : ''}${meta}</span><span class="cm-slot-btns">${buttons}</span></li>`;
+    }).join('');
+    return `<div class="cm-card"><h4>SAVE SLOTS<em>3 SLOTS + AUTOSAVE · LOCALSTORAGE</em></h4><ul class="cm-list cm-saves">${rows}</ul></div>
+      <div class="cm-card"><div class="cm-rank-next">Saves stay in this browser. Esc also pauses to save, load or delete, and the title screen's LOAD GAME lists every slot.</div></div>`;
+  }
+
   function renderSide() {
-    if (tab === 'story') {
+    if (tab === 'saves' && saves) {
+      side.innerHTML = savesDetail();
+    } else if (tab === 'story') {
       side.innerHTML = `<div class="cm-card"><h4>THE SOLARIS BAY JOB<em>${missions.progress} / ${MISSIONS.length} JOBS</em></h4><ul class="cm-list cm-scroll">${storyRows(true)}</ul></div>`;
     } else if (tab === 'crew') {
       side.innerHTML = `${crewCard(true)}${turfDetail()}`;
@@ -186,6 +220,7 @@ export function createCityMenu({ painter, missions, activities, progression, com
       turfBox.classList.toggle('hidden', tab === 'crew');
       turfBox.innerHTML = turfBars(false);
     }
+    savePill();
   }
 
   /** Redraw the map and the side panel from the live state. */

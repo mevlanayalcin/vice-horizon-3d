@@ -165,7 +165,7 @@ export function createHud({ onAction, world }) {
       els.continueBtn.disabled = !info.hasSave;
       setText(els.continueMeta, info.hasSave ? info.saveLabel ?? 'LATEST SAVE' : 'NO SAVE FOUND');
     }
-    if (els.loadMenuMeta) setText(els.loadMenuMeta, `${info.slotsUsed ?? 0} / 4 SLOTS USED`);
+    if (els.loadMenuMeta) setText(els.loadMenuMeta, `3 SAVE SLOTS + AUTOSAVE · ${info.slotsUsed ?? 0} USED`);
     if (info.storyComplete) setText(els.titleProgress, `${total} / ${total}`);
   }
 

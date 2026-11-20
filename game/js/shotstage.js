@@ -555,6 +555,18 @@ function stageMenu() {
   progression.state.neon = 'pink';
   stageCareer(2, { palm: 72, harbor: 46, midtown: 38, hills: 14, key: 6 });
   crew.mateo.status = 'RIDING SHOTGUN';
+  // The save pill and SAVES tab read these staged slots, so photo mode never writes to the
+  // visitor's localStorage. Timestamps are fixed local times, the same on every capture.
+  const at = (h, m) => new Date(2026, 10, 20, h, m).getTime();
+  const slot = (id, label, savedAt, name, district, progress, cash, crewIds) => ({
+    slot: id, label, exists: !!savedAt, savedAt, name, district, progress, total: 8, cash, crew: crewIds, storyComplete: false,
+  });
+  game.stagedSaves = [
+    slot('auto', 'AUTOSAVE', at(22, 4), '03 · Neon Heist Getaway', 'Neon Midtown', 2, 58420, ['elena', 'mateo']),
+    slot('1', 'SLOT 1', at(21, 58), '03 · Neon Heist Getaway', 'Palm Strip', 2, 57900, ['elena', 'mateo']),
+    slot('2', 'SLOT 2', at(19, 31), '02 · Harbor Contraband', 'Harbor Docks', 1, 21350, ['elena']),
+    slot('3', 'SLOT 3', 0, '', 'Palm Strip', 0, 0, []),
+  ];
   const hero = driveHero('supercar', 132, 120, Math.PI, 0, { body: rgb(0x27e2d2), accent: rgb(0xff3f95) });
   const p = combat.player;
   p.x = hero.x; p.z = hero.z; p.heading = hero.heading;

@@ -117,7 +117,9 @@
         <button data-action="menuTab" data-tab="activities">ACTIVITIES</button>
         <button data-action="menuTab" data-tab="garage">GARAGE</button>
         <button data-action="menuTab" data-tab="stats">STATS</button>
+        <button data-action="menuTab" data-tab="saves">SAVES</button>
       </nav>
+      <button class="cm-save" id="cmSave" data-action="menuTab" data-tab="saves" aria-label="Save slots"><span>SAVE · 3 SLOTS</span><b>SLOT 1 · NOT SAVED YET</b></button>
       <div class="cm-wallet"><span>CASH</span><b id="cmCash">$0</b></div>
     </div>
     <div class="cm-body">
@@ -131,7 +133,7 @@
       </div>
       <div class="cm-side" id="cmSide"></div>
     </div>
-    <div class="cm-foot"><span>M / TAB CLOSE · CLICK A TAB · GARAGE UPGRADES APPLY TO EVERY CAR YOU DRIVE</span><button class="modal-btn" data-action="closeMenu">BACK TO THE CITY</button></div>
+    <div class="cm-foot"><span>M / TAB CLOSE · CLICK A TAB · SAVES TAB WRITES 3 SLOTS · GARAGE UPGRADES APPLY TO EVERY CAR YOU DRIVE</span><button class="modal-btn" data-action="closeMenu">BACK TO THE CITY</button></div>
   </div>
 </div>
 
@@ -149,7 +151,7 @@
       <div class="menu">
         <button class="menu-btn primary" data-action="new"><span class="btn-index">01</span><span class="btn-label">NEW GAME</span><span class="btn-arrow">→</span></button>
         <button class="menu-btn" data-action="continue" id="continueBtn"><span class="btn-index">02</span><span class="btn-label">CONTINUE SAVE</span><span class="btn-meta" id="continueMeta">NO SAVE FOUND</span></button>
-        <button class="menu-btn" data-action="loadMenu" id="loadMenuBtn"><span class="btn-index">03</span><span class="btn-label">LOAD GAME</span><span class="btn-meta" id="loadMenuMeta">3 SLOTS + AUTOSAVE</span></button>
+        <button class="menu-btn" data-action="loadMenu" id="loadMenuBtn"><span class="btn-index">03</span><span class="btn-label">LOAD GAME</span><span class="btn-meta" id="loadMenuMeta">3 SAVE SLOTS + AUTOSAVE</span></button>
         <button class="menu-btn" data-action="controls"><span class="btn-index">04</span><span class="btn-label">CONTROLS &amp; CITY</span><span class="btn-arrow">→</span></button>
       </div>
       <div class="title-stats">
