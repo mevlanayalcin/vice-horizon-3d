@@ -8,29 +8,44 @@
 import { DISTRICTS, SAFEHOUSE, CITY } from './config.js';
 
 const COLORS = {
-  water: '#0f3f4f',
-  waterDeep: '#0a2a3a',
-  land: '#1f2b33',
-  hills: '#22332c',
-  sand: '#b89a62',
-  surf: 'rgba(120, 236, 230, 0.55)',
-  pier: '#7a5a3a',
+  water: '#127186',
+  waterDeep: '#0a2346',
+  shallow: 'rgba(64, 226, 214, 0.20)',
+  land: '#1d2830',
+  hills: '#20352b',
+  sand: '#e2bf7a',
+  sandWet: '#a98a5a',
+  surf: 'rgba(225, 255, 250, 0.85)',
+  pier: '#8a643e',
   building: '#33434d',
-  buildingTall: '#43596a',
+  buildingTall: '#4a6274',
   roadCase: '#0b1115',
   road: '#7d8d94',
   roadMain: '#a9b6ba',
-  boulevard: '#cfc6b2',
+  boulevard: '#e8d9b8',
   dash: 'rgba(255, 214, 120, 0.85)',
 };
 
-const DISTRICT_TINTS = [
-  { x: 0, z: 262, w: 960, d: 44, color: 'rgba(255, 178, 87, 0.14)' },
-  { x: -10, z: -60, w: 420, d: 300, color: 'rgba(197, 108, 255, 0.10)' },
-  { x: -350, z: -210, w: 230, d: 320, color: 'rgba(87, 216, 208, 0.09)' },
-  { x: 345, z: 170, w: 330, d: 240, color: 'rgba(92, 200, 255, 0.09)' },
-  { x: 60, z: -400, w: 960, d: 120, color: 'rgba(158, 224, 106, 0.08)' },
+/** District footprints on the map: tinted zones with a lit border, keyed by district id. */
+const DISTRICT_ZONES = [
+  { id: 'palm', x0: -440, x1: 520, z0: 196, z1: 300, color: '255, 178, 87' },
+  { id: 'midtown', x0: -200, x1: 200, z0: -200, z1: 66, color: '197, 108, 255' },
+  { id: 'harbor', x0: -470, x1: -230, z0: -330, z1: 150, color: '87, 216, 208' },
+  { id: 'marina', x0: 250, x1: 520, z0: 40, z1: 196, color: '92, 200, 255' },
+  { id: 'hills', x0: -440, x1: 520, z0: -470, z1: -320, color: '158, 224, 106' },
 ];
+
+/** Map-only place names beside the six districts. */
+const PLACE_LABELS = [
+  { name: 'Starlight Key', color: '#ffe08a', x: 654, z: 112 },
+  { name: 'Sunset Beach', color: '#ffd29a', x: 210, z: 322 },
+  { name: 'Solaris Bay', color: 'rgba(170, 240, 255, 0.5)', x: 300, z: 425, big: true },
+];
+
+/** A smooth deterministic wobble for organic coastlines. */
+function wobble(t, seed, amp) {
+  return (Math.sin(t * 0.021 + seed) * 0.6 + Math.sin(t * 0.057 + seed * 2.3) * 0.3 + Math.sin(t * 0.13 + seed * 4.1) * 0.1) * amp;
+}
 
 export function createMapPainter(world) {
   const map = world.map;
@@ -54,41 +69,162 @@ export function createMapPainter(world) {
     g.fillRect(v.x(x - w / 2), v.y(z - d / 2), w * v.scale, d * v.scale);
   }
 
-  /** The static city: water, land, beach, pier, district tints, footprints and roads. */
+  /** The mainland outline: straight inland edges, an organic sea coast along the beach. */
+  function mainlandPath(g, v, shore = 0) {
+    g.beginPath();
+    g.moveTo(v.x(-470 - shore), v.y(-620));
+    g.lineTo(v.x(520 + shore), v.y(-620));
+    for (let z = -470; z <= 300; z += 20) g.lineTo(v.x(520 + shore + Math.max(0, wobble(z, 1.2, 8))), v.y(z));
+    for (let x = 520; x >= -470; x -= 12) g.lineTo(v.x(x), v.y(coastZ(x) + shore));
+    for (let z = 300; z >= -470; z -= 20) g.lineTo(v.x(-470 - shore - Math.max(0, wobble(z, 2.9, 8))), v.y(z));
+    g.closePath();
+  }
+
+  /** Where the sand meets the surf: a gently scalloped curve, deepest at Sunset Beach. */
+  function coastZ(x) {
+    return 337 + wobble(x, 0.7, 6) + Math.exp(-(((x - 220) / 180) ** 2)) * 7;
+  }
+
+  function islandPath(g, v, grow = 0) {
+    const I = CITY.island;
+    const cx = (I.minX + I.maxX) / 2, cz = (I.minZ + I.maxZ) / 2;
+    const rx = (I.maxX - I.minX) / 2 + 6 + grow, rz = (I.maxZ - I.minZ) / 2 + 6 + grow;
+    g.beginPath();
+    for (let i = 0; i <= 64; i += 1) {
+      const a = (i / 64) * Math.PI * 2;
+      const c = Math.cos(a), sn = Math.sin(a);
+      // A squircle hugging the island's square footprint, its coast gently scalloped.
+      const k = 1 / Math.pow(Math.abs(c) ** 4 + Math.abs(sn) ** 4, 0.25);
+      const r = 1 + wobble(i * 40, 5.1, 0.03);
+      const x = cx + c * rx * k * r, z = cz + sn * rz * k * r;
+      if (i) g.lineTo(v.x(x), v.y(z)); else g.moveTo(v.x(x), v.y(z));
+    }
+    g.closePath();
+  }
+
+  /** The static city: bay contours, coastline, beach, pier, island, district zones, footprints, roads. */
   function drawBase(g, v, opts = {}) {
-    const ocean = g.createLinearGradient(0, v.y(300), 0, v.y(520));
+    const ocean = g.createLinearGradient(0, v.y(330), 0, v.y(640));
     ocean.addColorStop(0, COLORS.water);
     ocean.addColorStop(1, COLORS.waterDeep);
     g.fillStyle = ocean;
     g.fillRect(0, 0, v.w, v.h);
-    // Ripples on the bay.
-    g.strokeStyle = 'rgba(110, 220, 225, 0.07)';
-    g.lineWidth = Math.max(1, v.scale * 0.8);
-    for (let z = 320; z < 620; z += 26) {
-      g.beginPath(); g.moveTo(v.x(-600), v.y(z)); g.lineTo(v.x(900), v.y(z)); g.stroke();
+    // Shallow-to-deep contours: turquoise bands stepping off the coast and the island.
+    g.lineJoin = 'round';
+    for (const [shore, alpha] of [[70, 0.07], [44, 0.1], [24, 0.14], [10, 0.2]]) {
+      g.fillStyle = `rgba(64, 226, 214, ${alpha})`;
+      mainlandPath(g, v, shore); g.fill();
+      islandPath(g, v, shore * 0.7); g.fill();
     }
-    // Land masses.
-    rect(g, v, 40, -84 - 40, 960, 852, COLORS.land);
-    rect(g, v, 40, -400, 960, 110, COLORS.hills);
-    rect(g, v, 654, 185, 212, 230, COLORS.land);
-    for (const t of DISTRICT_TINTS) rect(g, v, t.x, t.z, t.w, t.d, t.color);
-    // Beach, surf line and pier.
-    rect(g, v, 25, 319, 990, 34, COLORS.sand);
+    g.strokeStyle = 'rgba(160, 250, 240, 0.12)';
+    g.lineWidth = Math.max(1, v.scale * 0.8);
+    for (const shore of [34, 58, 90]) { mainlandPath(g, v, shore); g.stroke(); }
+    // Land.
+    g.fillStyle = COLORS.land;
+    mainlandPath(g, v, 0); g.fill();
+    rect(g, v, 25, -400, 990, 160, COLORS.hills);
+    // Hill contours.
+    g.strokeStyle = 'rgba(158, 224, 106, 0.14)';
+    g.lineWidth = Math.max(1, v.scale);
+    for (let k = 0; k < 4; k += 1) {
+      g.beginPath();
+      for (let x = -470; x <= 520; x += 15) {
+        const z = -455 + k * 26 + wobble(x, k * 1.7, 9);
+        if (x === -470) g.moveTo(v.x(x), v.y(z)); else g.lineTo(v.x(x), v.y(z));
+      }
+      g.stroke();
+    }
+    // District zones with a glowing outline.
+    for (const zone of DISTRICT_ZONES) {
+      const x = v.x(zone.x0), y = v.y(zone.z0), w = (zone.x1 - zone.x0) * v.scale, h = (zone.z1 - zone.z0) * v.scale;
+      const grad = g.createLinearGradient(x, y, x, y + h);
+      grad.addColorStop(0, `rgba(${zone.color}, 0.16)`);
+      grad.addColorStop(1, `rgba(${zone.color}, 0.07)`);
+      g.fillStyle = grad;
+      g.fillRect(x, y, w, h);
+      g.strokeStyle = `rgba(${zone.color}, 0.35)`;
+      g.lineWidth = Math.max(1, v.scale * 1.1);
+      g.setLineDash([v.scale * 8, v.scale * 5]);
+      g.strokeRect(x, y, w, h);
+      g.setLineDash([]);
+    }
+    // The golden beach: dry sand, wet sand and a white surf line along the scalloped coast.
+    g.beginPath();
+    g.moveTo(v.x(-470), v.y(300));
+    g.lineTo(v.x(520), v.y(300));
+    for (let x = 520; x >= -470; x -= 12) g.lineTo(v.x(x), v.y(coastZ(x)));
+    g.closePath();
+    const sand = g.createLinearGradient(0, v.y(300), 0, v.y(340));
+    sand.addColorStop(0, COLORS.sand);
+    sand.addColorStop(0.75, '#d1ab68');
+    sand.addColorStop(1, COLORS.sandWet);
+    g.fillStyle = sand;
+    g.fill();
     rect(g, v, 25, 295, 990, 13, '#8c6c4a');
     g.strokeStyle = COLORS.surf;
-    g.lineWidth = Math.max(1.5, v.scale * 1.6);
-    g.beginPath(); g.moveTo(v.x(-470), v.y(337)); g.lineTo(v.x(520), v.y(337)); g.stroke();
+    g.lineWidth = Math.max(1.5, v.scale * 1.8);
+    g.beginPath();
+    for (let x = -470; x <= 520; x += 8) {
+      const z = coastZ(x) + 0.5;
+      if (x === -470) g.moveTo(v.x(x), v.y(z)); else g.lineTo(v.x(x), v.y(z));
+    }
+    g.stroke();
+    // Beach umbrellas dotted along the sand.
+    const umbrellas = ['#ff6f91', '#55ebff', '#ffd166', '#ff8f6b'];
+    for (let x = -380, i = 0; x < 470; x += 61, i += 1) {
+      g.fillStyle = umbrellas[i % 4];
+      g.beginPath(); g.arc(v.x(x), v.y(318), Math.max(1.5, v.scale * 2.2), 0, Math.PI * 2); g.fill();
+    }
+    // Coral Pier and its neon wheel.
     rect(g, v, -166, 374, 20, 144, COLORS.pier);
     rect(g, v, -166, 430, 44, 26, COLORS.pier);
-    rect(g, v, 760, 190, 26, 90, '#6a5a44');
-    // Building footprints with a lit edge.
+    g.strokeStyle = 'rgba(40, 24, 12, 0.6)';
+    g.lineWidth = 1;
+    for (let z = 306; z < 444; z += 6) { g.beginPath(); g.moveTo(v.x(-176), v.y(z)); g.lineTo(v.x(-156), v.y(z)); g.stroke(); }
+    g.save();
+    g.strokeStyle = '#ff6f91';
+    g.shadowColor = '#ff6f91';
+    g.shadowBlur = 8;
+    g.lineWidth = Math.max(1.5, v.scale * 1.6);
+    const wr = Math.max(5, v.scale * 11);
+    g.beginPath(); g.arc(v.x(-166), v.y(432), wr, 0, Math.PI * 2); g.stroke();
+    for (let i = 0; i < 4; i += 1) {
+      const a = (i / 4) * Math.PI;
+      g.beginPath(); g.moveTo(v.x(-166) - Math.cos(a) * wr, v.y(432) - Math.sin(a) * wr); g.lineTo(v.x(-166) + Math.cos(a) * wr, v.y(432) + Math.sin(a) * wr); g.stroke();
+    }
+    g.restore();
+    // Starlight Key: a sand-ringed island with a palm park, marina slips and yachts.
+    g.fillStyle = COLORS.sand;
+    islandPath(g, v, 4); g.fill();
+    g.fillStyle = '#1f2d33';
+    islandPath(g, v, -2); g.fill();
+    g.fillStyle = 'rgba(255, 224, 138, 0.10)';
+    islandPath(g, v, -2); g.fill();
+    g.fillStyle = 'rgba(94, 190, 110, 0.35)';
+    g.beginPath(); g.arc(v.x(690), v.y(250), Math.max(4, v.scale * 22), 0, Math.PI * 2); g.fill();
+    for (let i = 0; i < 4; i += 1) {
+      const z = 150 + i * 26;
+      g.strokeStyle = '#b48a5e';
+      g.lineWidth = Math.max(1.5, v.scale * 3);
+      g.beginPath(); g.moveTo(v.x(747), v.y(z)); g.lineTo(v.x(778), v.y(z)); g.stroke();
+      for (const dz of [-7, 7]) {
+        g.fillStyle = '#f5f2ea';
+        g.beginPath(); g.ellipse(v.x(770), v.y(z + dz), Math.max(2, v.scale * 7), Math.max(1, v.scale * 2.4), 0, 0, Math.PI * 2); g.fill();
+      }
+    }
+    // The causeway deck with its rails.
+    g.strokeStyle = 'rgba(92, 200, 255, 0.7)';
+    g.lineWidth = Math.max(1, v.scale * 0.8);
+    for (const dz of [-13, 13]) { g.beginPath(); g.moveTo(v.x(512), v.y(130 + dz)); g.lineTo(v.x(552), v.y(130 + dz)); g.stroke(); }
+    // Building footprints, tinted toward their district, with a lit edge.
+    const tint = { palm: '#4b4249', midtown: '#3f3a58', harbor: '#2f4a4c', marina: '#33495c', hills: '#34453a' };
     for (const b of buildings) {
       if (b.x + b.w / 2 < v.minX || b.x - b.w / 2 > v.maxX || b.z + b.d / 2 < v.minZ || b.z - b.d / 2 > v.maxZ) continue;
       const x = v.x(b.x - b.w / 2), y = v.y(b.z - b.d / 2), w = b.w * v.scale, h = b.d * v.scale;
-      g.fillStyle = b.h > 45 ? COLORS.buildingTall : COLORS.building;
+      g.fillStyle = b.h > 45 ? COLORS.buildingTall : tint[b.district] ?? COLORS.building;
       g.fillRect(x, y, w, h);
-      if (v.scale > 0.9) {
-        g.fillStyle = 'rgba(255, 255, 255, 0.07)';
+      if (v.scale > 0.4) {
+        g.fillStyle = 'rgba(255, 255, 255, 0.08)';
         g.fillRect(x, y, w, Math.max(1, v.scale * 1.2));
       }
     }
@@ -114,16 +250,31 @@ export function createMapPainter(world) {
   function drawLabels(g, v) {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    const font = Math.round(Math.max(11, v.scale * 13));
-    g.font = `800 ${font}px "Trebuchet MS", "DejaVu Sans", sans-serif`;
-    for (const d of DISTRICTS) {
-      const x = v.x(d.x), y = v.y(d.id === 'palm' ? 240 : d.z);
-      g.fillStyle = 'rgba(4, 8, 12, 0.6)';
-      const w = g.measureText(d.name.toUpperCase()).width + 14;
-      g.fillRect(x - w / 2, y - font * 0.8, w, font * 1.6);
-      g.fillStyle = d.color;
-      g.fillText(d.name.toUpperCase(), x, y + 1);
-    }
+    const font = Math.round(Math.max(11, v.scale * 14));
+    const label = (text, x, y, color, size = font, plate = true) => {
+      g.font = `800 ${size}px "Trebuchet MS", "DejaVu Sans", sans-serif`;
+      const spaced = text.toUpperCase().split('').join(String.fromCharCode(8202));
+      const w = g.measureText(spaced).width + 18;
+      if (plate) {
+        g.fillStyle = 'rgba(4, 8, 14, 0.72)';
+        g.beginPath();
+        g.roundRect(x - w / 2, y - size * 0.85, w, size * 1.7, size * 0.5);
+        g.fill();
+        g.strokeStyle = color;
+        g.globalAlpha = 0.55;
+        g.lineWidth = 1;
+        g.stroke();
+        g.globalAlpha = 1;
+      }
+      g.save();
+      g.shadowColor = color;
+      g.shadowBlur = plate ? 6 : 0;
+      g.fillStyle = color;
+      g.fillText(spaced, x, y + 1);
+      g.restore();
+    };
+    for (const d of DISTRICTS) label(d.name, v.x(d.x), v.y(d.id === 'palm' ? 232 : d.id === 'pier' ? 462 : d.z), d.color);
+    for (const p of PLACE_LABELS) label(p.name, v.x(p.x), v.y(p.z), p.color, p.big ? Math.round(font * 1.6) : font, !p.big);
   }
 
   /** A pin with a letter: mission gold, activities cyan, the garage mint. */
@@ -289,6 +440,33 @@ export function createMapPainter(world) {
     g.restore();
   }
 
+  // The static layers are painted once into offscreen canvases and blitted each frame.
+  const WORLD = { x0: -720, z0: -680, x1: 940, z1: 680 };
+  const caches = new Map();
+  function cachedBase(scale, labels) {
+    const key = `${scale.toFixed(3)}|${labels ? 1 : 0}`;
+    let entry = caches.get(key);
+    if (!entry) {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil((WORLD.x1 - WORLD.x0) * scale);
+      canvas.height = Math.ceil((WORLD.z1 - WORLD.z0) * scale);
+      const v = makeView((WORLD.x0 + WORLD.x1) / 2, (WORLD.z0 + WORLD.z1) / 2, scale, canvas.width, canvas.height);
+      drawBase(canvas.getContext('2d'), v, { labels });
+      entry = { canvas, scale };
+      if (caches.size > 6) caches.clear();
+      caches.set(key, entry);
+    }
+    return entry;
+  }
+
+  /** Blit the cached base map under view `v`. */
+  function blitBase(g, v, labels) {
+    const entry = cachedBase(labels ? v.scale : Math.min(2.2, v.scale * 1.0), labels);
+    const k = v.scale / entry.scale;
+    g.imageSmoothingEnabled = true;
+    g.drawImage(entry.canvas, v.x(WORLD.x0), v.y(WORLD.z0), entry.canvas.width * k, entry.canvas.height * k);
+  }
+
   /** The HUD minimap: a north-up window around the player, zooming out with speed. */
   function drawMinimap(canvas, s) {
     const g = canvas.getContext('2d');
@@ -299,7 +477,12 @@ export function createMapPainter(world) {
     const span = 230 + Math.min(1, speed / 50) * 90;
     const v = makeView(px, pz, w / span, w, h);
     g.clearRect(0, 0, w, h);
-    drawBase(g, v);
+    g.fillStyle = COLORS.waterDeep;
+    g.fillRect(0, 0, w, h);
+    // One cached scale for the whole zoom range keeps the minimap a single blit per frame.
+    const base = cachedBase(w / 230, false);
+    const k = v.scale / base.scale;
+    g.drawImage(base.canvas, v.x(WORLD.x0), v.y(WORLD.z0), base.canvas.width * k, base.canvas.height * k);
     drawLive(g, v, s);
     // Edge vignette so the window reads as glass.
     const vg = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.62);
@@ -313,10 +496,12 @@ export function createMapPainter(world) {
   function drawCityMap(canvas, s) {
     const g = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
-    const scale = Math.min(w / 1290, h / 1000);
-    const v = makeView(150, -28, scale, w, h);
+    const scale = Math.min(w / 1300, h / 1090);
+    const v = makeView(156, 18, scale, w, h);
     g.clearRect(0, 0, w, h);
-    drawBase(g, v, { labels: true });
+    g.fillStyle = COLORS.waterDeep;
+    g.fillRect(0, 0, w, h);
+    blitBase(g, v, true);
     drawLive(g, v, { ...s, fullMap: true });
   }
 

@@ -3,7 +3,7 @@
 // flashes, sparks, blood, enemy goons and police officers with health bars.
 // buildCharacter() is the shared low-poly person used by pedestrians and NPCs too.
 
-import { PALETTE, WEAPONS, clamp, lerp, rgb, shade } from './config.js';
+import { PALETTE, WEAPONS, clamp, lerp, mix3, rgb, shade } from './config.js';
 import { vehicleForward } from './vehicles.js';
 
 const SKIN = [rgb(0xc98f66), rgb(0xb07850), rgb(0xe2b28a), rgb(0x8d5c3d), rgb(0xd9a377)];
@@ -14,6 +14,9 @@ const HAIR = [rgb(0x221a15), rgb(0x5a3a22), rgb(0xc9a06a), rgb(0x1a1a1c), rgb(0x
 export function characterColors(seed = 0.5, style = 'civ') {
   if (style === 'cop') {
     return { skin: SKIN[Math.floor(seed * SKIN.length) % SKIN.length], shirt: rgb(0x26364c), pants: rgb(0x1e2734), hair: HAIR[Math.floor(seed * HAIR.length) % HAIR.length], accent: rgb(0xe9d27a) };
+  }
+  if (style === 'guard') {
+    return { skin: SKIN[Math.floor(seed * SKIN.length) % SKIN.length], shirt: rgb(0x34404f), pants: rgb(0x1d232c), hair: rgb(0x17171a), accent: rgb(0xffc24b), vest: rgb(0x22262c) };
   }
   if (style === 'goon') {
     return { skin: SKIN[Math.floor(seed * SKIN.length) % SKIN.length], shirt: rgb(0x2e2b30), pants: rgb(0x232326), hair: rgb(0x17171a), accent: rgb(0x8f2b2b) };
@@ -94,10 +97,56 @@ export function buildCharacter(b, c, time = 0) {
     axis.push(W(0, y, 0));
   }
   b.surface(rows, { wrap: true, axis, colorAt: (i) => torsoCells[i] });
+  if (colors.jacket || colors.vest) {
+    // Player: an open linen blazer over the shirt. Vault guards: a plated tactical vest.
+    const jacket = !!colors.jacket;
+    const gap = jacket ? 0.55 : 0.0;
+    const cols = lod ? 7 : 12;
+    const jRows = [], jAxis = [];
+    const jSpec = jacket
+      ? [[hipY - 0.02, 0.178, 0.124], [hipY + 0.12, 0.17, 0.118], [hipY + 0.36, 0.198, 0.132], [hipY + 0.5, 0.212, 0.118], [hipY + 0.6, 0.12, 0.09]]
+      : [[hipY + 0.1, 0.178, 0.135], [hipY + 0.3, 0.2, 0.148], [hipY + 0.48, 0.205, 0.132]];
+    for (const [y, rx, rz] of jSpec) {
+      const ring = [];
+      for (let i = 0; i <= cols; i += 1) {
+        const a = Math.PI / 2 + gap + (i / cols) * (Math.PI * 2 - gap * 2);
+        ring.push(W(Math.cos(a) * rx * k, y, Math.sin(a) * rz * k));
+      }
+      jRows.push(ring);
+      jAxis.push(W(0, y, 0));
+    }
+    const shell = jacket ? colors.jacket : colors.vest;
+    b.surface(jRows, { axis: jAxis, colorAt: (i) => (!jacket && i === 1 ? shade(shell, 1.25) : shell), s: jacket ? 0 : -0.35 });
+    if (jacket) {
+      // Lapels and a pocket square in gold.
+      for (const side of [-1, 1]) {
+        const lap = W(side * 0.07 * k, hipY + 0.44, 0.112 * k);
+        b.ellipsoid(lap[0], lap[1], lap[2], 0.035 * k, 0.12 * k, 0.02 * k, shade(colors.jacket, 0.86), { yaw: yaw + side * 0.3, segments: 5, rings: 3 });
+      }
+      const sq = W(0.12 * k, hipY + 0.4, 0.118 * k);
+      b.box(sq[0], sq[1], sq[2], 0.05 * k, 0.03 * k, 0.012, colors.accent, { rotY: -yaw, omitBottom: true });
+    } else {
+      // Gold unit stripe and a glowing ID strip across the vest.
+      const strip = W(0, hipY + 0.34, 0.15 * k);
+      b.box(strip[0], strip[1], strip[2], 0.26 * k, 0.04 * k, 0.02, colors.accent, { rotY: -yaw, e: 0.7, omitBottom: true });
+      for (const side of [-1, 1]) {
+        const pad = W(side * 0.21 * k, hipY + 0.5, 0);
+        b.ellipsoid(pad[0], pad[1], pad[2], 0.075 * k, 0.05 * k, 0.09 * k, colors.vest, { yaw, segments: 6, rings: 3 });
+        const pouch = W(side * 0.09 * k, hipY + 0.18, 0.15 * k);
+        b.box(pouch[0], pouch[1], pouch[2], 0.08 * k, 0.09 * k, 0.05 * k, shade(colors.vest, 1.3), { rotY: -yaw, omitBottom: true });
+      }
+    }
+  }
+  if (c.style === 'guard') {
+    const helm = W(0, headY + 0.045 * k, -0.005 * k);
+    b.ellipsoid(helm[0], helm[1], helm[2], 0.138 * k, 0.12 * k, 0.15 * k, colors.vest, { yaw, segments: 9, rings: 4, top: 0.56, s: -0.4 });
+    const visor = W(0, headY + 0.005 * k, 0.118 * k);
+    b.ellipsoid(visor[0], visor[1], visor[2], 0.105 * k, 0.04 * k, 0.03 * k, rgb(0x0b1c2a), { yaw, segments: 6, rings: 3, s: -1 });
+  }
   if (c.style === 'cop') {
     const badge = W(0.09 * k, hipY + 0.42, 0.12 * k);
     b.ellipsoid(badge[0], badge[1], badge[2], 0.035, 0.035, 0.012, colors.accent, { yaw, segments: 5, rings: 3, e: 0.4 });
-  } else if (c.style !== 'goon') {
+  } else if (c.style !== 'goon' && c.style !== 'guard') {
     // An open overshirt collar in the accent colour.
     const collar = W(0, hipY + 0.55, 0.05 * k);
     b.ellipsoid(collar[0], collar[1], collar[2], 0.11 * k, 0.04 * k, 0.07 * k, colors.accent, { yaw, segments: 6, rings: 3 });
@@ -127,9 +176,11 @@ export function buildCharacter(b, c, time = 0) {
   }
 
   // Arms: panic up, aiming forward, or swinging with the walk. Short sleeves, bare forearms.
-  const sleeveRow = (color) => (i) => (i === 0 ? color : c.style === 'cop' ? color : colors.skin);
+  const longSleeve = c.style === 'cop' || c.style === 'guard' || !!colors.jacket;
+  const sleeve = colors.jacket ?? colors.shirt;
+  const sleeveRow = (color) => (i) => (i === 0 ? color : longSleeve ? shade(color, 0.94) : colors.skin);
   const arm = (shoulder, elbow, hand) => {
-    b.tube([shoulder, elbow, hand], [0.062 * k, 0.05 * k, 0.04 * k], sides, colors.shirt, { colorAt: sleeveRow(colors.shirt) });
+    b.tube([shoulder, elbow, hand], [0.066 * k, 0.054 * k, 0.042 * k], sides, sleeve, { colorAt: sleeveRow(sleeve) });
     b.ellipsoid(hand[0], hand[1], hand[2], 0.048 * k, 0.055 * k, 0.05 * k, colors.skin, { yaw, segments: 6, rings: 3 });
   };
   const shoulderY = hipY + 0.5;
@@ -168,6 +219,37 @@ export function buildCharacter(b, c, time = 0) {
     const armSwing = Math.sin(walk) * 0.35 * swing;
     arm(shoulderL, W(-0.24 * k, shoulderY - 0.27, -armSwing * 0.35), W(-0.25 * k, shoulderY - 0.53, -armSwing * 0.7 + 0.05));
     arm(shoulderR, W(0.24 * k, shoulderY - 0.27, armSwing * 0.35), W(0.25 * k, shoulderY - 0.53, armSwing * 0.7 + 0.05));
+  }
+}
+
+/**
+ * A star-shaped muzzle flash at (x, y, z) firing along unit (ux, uy, uz): a long forward
+ * spike and a ring of shorter petals, each a pair of crossed emissive blades.
+ */
+function buildMuzzleFlash(b, x, y, z, ux, uy, uz, size, color, seed) {
+  let ax = uz, ay = 0, az = -ux;
+  const al = Math.hypot(ax, az) || 1;
+  ax /= al; az /= al;
+  const bx = uy * az - uz * ay, by = uz * ax - ux * az, bz = ux * ay - uy * ax;
+  const hot = rgb(0xfff4d2);
+  const warm = mix3(color, rgb(0xffb04a), 0.5);
+  const blade = (dx, dy, dz, len, width, col) => {
+    const tip = [x + dx * len, y + dy * len, z + dz * len];
+    for (const [sx, sy, sz] of [[ax, ay, az], [bx, by, bz]]) {
+      const w = width * size;
+      b.tri([x + sx * w, y + sy * w, z + sz * w], tip, [x - sx * w, y - sy * w, z - sz * w], col, { e: 1, n: [-ux, -uy, -uz] });
+    }
+  };
+  blade(ux, uy, uz, 0.95 * size, 0.16, hot);
+  const petals = 6;
+  for (let i = 0; i < petals; i += 1) {
+    const a = (i / petals) * Math.PI * 2 + seed * 0.7;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const dx = ux * 0.55 + (ax * ca + bx * sa) * 0.8;
+    const dy = uy * 0.55 + (ay * ca + by * sa) * 0.8;
+    const dz = uz * 0.55 + (az * ca + bz * sa) * 0.8;
+    const dl = Math.hypot(dx, dy, dz);
+    blade(dx / dl, dy / dl, dz / dl, (0.42 + (i % 2) * 0.2) * size, 0.07, i % 2 ? warm : hot);
   }
 }
 
@@ -210,7 +292,7 @@ export function createCombat(world, bus) {
     deathTimer: 0,
     hitFlash: 0,
     lastDamageAt: -10,
-    colors: { skin: rgb(0xc58f68), shirt: rgb(0xe85a44), pants: rgb(0x3c4d68), hair: rgb(0x1d1a19) },
+    colors: { skin: rgb(0xc58f68), shirt: rgb(0xe85a44), pants: rgb(0x3c4d68), hair: rgb(0x1d1a19), jacket: rgb(0xeee4d2), accent: rgb(0xffc24b) },
     style: 'player',
     longHair: false,
   };
@@ -340,6 +422,18 @@ export function createCombat(world, bus) {
     }
   }
 
+  /** A spent brass casing flicked out to the shooter's right; it bounces on the ground. */
+  function ejectCasing(x, y, z, yaw) {
+    const rx = -Math.cos(yaw), rz = Math.sin(yaw);
+    particles.push({
+      x, y, z,
+      vx: rx * (2.2 + Math.random()) + (Math.random() - 0.5) * 0.6,
+      vy: 2.4 + Math.random() * 1.2,
+      vz: rz * (2.2 + Math.random()) + (Math.random() - 0.5) * 0.6,
+      life: 1.4, maxLife: 1.4, color: rgb(0xd9a441), size: 0.3, gravity: 11, casing: true, spin: Math.random() * 6,
+    });
+  }
+
   function raycast(origin, dir, maxDist) {
     // March the ray until it enters a solid collider; cheap and good enough for bullets.
     let last = maxDist;
@@ -395,8 +489,9 @@ export function createCombat(world, bus) {
     } else if (hitDist < weaponSpec.range) {
       spark(end[0], end[1], end[2], rgb(0xffd59a), 3, 2.2);
     }
-    spawnTracer(start[0], start[1], start[2], end[0], end[1], end[2], weaponSpec.id === 'smg' ? PALETTE.neonCyan : PALETTE.gold, 0.055);
+    spawnTracer(start[0], start[1], start[2], end[0], end[1], end[2], rgb(0xffe6a8), 0.07);
     spark(start[0], start[1], start[2], PALETTE.gold, 2, 1.6);
+    ejectCasing(start[0] - Math.sin(yaw) * 0.35, start[1] + 0.05, start[2] - Math.cos(yaw) * 0.35, yaw);
     player.recoil = Math.min(0.12, player.recoil + 0.03);
     bus.onGunshot?.(weaponSpec.id, player.x, player.z);
   }
@@ -653,6 +748,11 @@ export function createCombat(world, bus) {
       p.y += p.vy * dt;
       p.z += p.vz * dt;
       p.vy -= p.gravity * dt;
+      if (p.casing) {
+        p.spin += dt * 14;
+        const floor = world.groundHeight(p.x, p.z) + 0.03;
+        if (p.y < floor) { p.y = floor; p.vy = Math.abs(p.vy) * 0.35; p.vx *= 0.5; p.vz *= 0.5; }
+      }
       if (p.life <= 0) particles.splice(i, 1);
     }
     for (let i = impacts.length - 1; i >= 0; i -= 1) {
@@ -695,15 +795,28 @@ export function createCombat(world, bus) {
         dead: !enemy.alive,
       }, time);
     }
-    // Tracers as glowing beams.
+    // Bullet tracers: a short white-hot streak racing down the line of fire with a
+    // tapering gold tail, and a star-shaped muzzle flash at the barrel while it is fresh.
     for (const t of tracers) {
-      const alpha = clamp(t.life / t.maxLife, 0, 1);
-      b.segment([t.x1, t.y1, t.z1], [t.x2, t.y2, t.z2], 0.05, 0.05, t.color, { e: 1, s: 0 });
-      void alpha;
+      const dx = t.x2 - t.x1, dy = t.y2 - t.y1, dz = t.z2 - t.z1;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      const ux = dx / len, uy = dy / len, uz = dz / len;
+      const age = t.head ?? clamp(1 - t.life / t.maxLife, 0, 1);
+      const head = Math.min(len, 1.2 + age * len);
+      const tail = Math.max(0, head - Math.min(3.4, len * 0.3));
+      const mid = tail + (head - tail) * 0.45;
+      const at = (d) => [t.x1 + ux * d, t.y1 + uy * d, t.z1 + uz * d];
+      b.segment(at(tail), at(mid), 0.022, 0.022, shade(t.color, 0.8), { e: 1, s: 0 });
+      b.segment(at(mid), at(head), 0.045, 0.045, mix3(t.color, PALETTE.white, 0.6), { e: 1, s: 0 });
+      if (t.flash !== false && (t.head !== undefined || age < 0.5)) buildMuzzleFlash(b, t.x1, t.y1, t.z1, ux, uy, uz, t.flashSize ?? 0.5, t.color, t.spin ?? len);
     }
-    // Blood/spark particles as tiny glowing tetra-ish boxes.
+    // Sparks and blood as tiny glowing chips; brass casings as tumbling glossy shells.
     for (const p of particles) {
       if (p.smoke) continue; // tyre smoke is drawn as soft halos only
+      if (p.casing) {
+        b.box(p.x, p.y, p.z, 0.026, 0.026, 0.07, p.color, { rotY: p.spin, omitBottom: true, s: -0.8, e: 0.15 });
+        continue;
+      }
       if (p.color[0] > 0.6 && p.color[1] < 0.4) {
         b.box(p.x, p.y, p.z, p.size * 0.2, p.size * 0.2, p.size * 0.2, p.color, { e: 1, omitBottom: true });
       } else {
@@ -719,12 +832,24 @@ export function createCombat(world, bus) {
   function glow(timeNow, add) {
     // Muzzle flashes and enemy muzzle heat.
     for (const t of tracers) {
-      const life = clamp(t.life / t.maxLife, 0, 1);
-      add(t.x1, t.y1, t.z1, t.color, 0.34 * life + 0.12, life * 0.8);
+      const life = t.head !== undefined ? 1 : clamp(t.life / t.maxLife, 0, 1);
+      const k = t.flashSize ?? 0.5;
+      if (t.flash !== false) {
+        add(t.x1, t.y1, t.z1, rgb(0xfff2c8), 0.55 * k * life + 0.2, life * 0.95);
+        add(t.x1, t.y1, t.z1, rgb(0xffa340), 2.2 * k * life + 0.3, life * 0.5);
+        // The flash lights up the ground around the shooter.
+        add(t.x1, (t.ground ?? t.y1 - 1.4) + 0.06, t.z1, rgb(0xffa850), 2.6 * k + 0.6, life * 0.35, { flat: true });
+      }
+      const dx = t.x2 - t.x1, dy = t.y2 - t.y1, dz = t.z2 - t.z1;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      const age = t.head ?? clamp(1 - t.life / t.maxLife, 0, 1);
+      const d = Math.min(len, 1.2 + age * len);
+      add(t.x1 + dx / len * d, t.y1 + dy / len * d, t.z1 + dz / len * d, t.color, 0.35, 0.7);
     }
     for (const p of particles) {
       const life = clamp(p.life / p.maxLife, 0, 1);
       if (p.smoke) add(p.x, p.y, p.z, p.color, p.size * 1.9, life * 0.22);
+      else if (p.casing) continue;
       else add(p.x, p.y, p.z, p.color, p.size * 0.8, life * 0.6);
     }
     for (const e of enemies) {

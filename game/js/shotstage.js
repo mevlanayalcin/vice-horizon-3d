@@ -5,7 +5,7 @@
 // Midtown, and the city map menu over the night skyline. Nothing is composited.
 
 import { PALETTE, rgb } from './config.js';
-import { createVehicle } from './vehicles.js';
+import { createVehicle, skidMarks, tyreSmoke } from './vehicles.js';
 
 let world, traffic, police, combat, missions, activities, progression, hud, camera, game;
 let parkedVehicles, random, setVehicle, setCameraAngles, setStageCity, openMenu;
@@ -28,6 +28,8 @@ function clearScene() {
   combat.clearEnemies();
   combat.tracers.length = 0;
   combat.particles.length = 0;
+  skidMarks.length = 0;
+  tyreSmoke.length = 0;
   combat.player.dead = false;
   combat.player.inVehicle = null;
   setVehicle(null);
@@ -73,6 +75,35 @@ function careerPlayer({ cash, respect, health = 100, armor = 40, slot = 3, mag =
   p.dead = false;
 }
 
+/** Rubber laid behind a sliding car: two rear-tyre streaks curving back along its arc. */
+function stageSkids(car, length, curve, alpha = 0.55) {
+  const back = car.spec.wheelBase / 2, half = car.spec.width * 0.4;
+  for (let d = 0; d < length; d += 0.7) {
+    const h = car.heading - curve * (d / length) ** 1.4;
+    const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+    const bx = car.x - fx * (back + d), bz = car.z - fz * (back + d);
+    const bend = curve * d * d / length * 0.35;
+    const rx = Math.cos(car.heading), rz = -Math.sin(car.heading);
+    for (const side of [-1, 1]) {
+      skidMarks.push({ x: bx + rx * (side * half + bend), z: bz + rz * (side * half + bend), y: car.y + 0.075, rot: h, alpha: alpha * (1 - d / length * 0.6) });
+    }
+  }
+}
+
+/** Thick tyre smoke boiling off the rear wheels and trailing back. */
+function stageSmoke(car, count, spread = 6) {
+  const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+  for (let i = 0; i < count; i += 1) {
+    const d = car.spec.wheelBase / 2 + random() * spread;
+    const side = (random() - 0.5) * car.spec.width * 1.4;
+    const life = 1.6 * (1 - d / (spread + 3));
+    tyreSmoke.push({
+      x: car.x - fx * d + Math.cos(car.heading) * side, y: car.y + 0.3 + d * 0.12 + random() * 0.3, z: car.z - fz * d - Math.sin(car.heading) * side,
+      size: 0.6 + d * 0.28 + random() * 0.4, life: Math.max(0.3, life), maxLife: 1.6, vy: 0,
+    });
+  }
+}
+
 function driveHero(type, x, z, heading, speed, colors = {}) {
   const hero = stageCar(type, x, z, heading, speed);
   if (colors.body) hero.color = colors.body;
@@ -102,7 +133,7 @@ function stageFrame(elapsed, name) {
 
 function stageTitle() {
   clearScene();
-  setStageHour(18.5);
+  setStageHour(19.05);
   missions.reset();
   missions.state.done = [true, true, false, false, false];
   missions.state.active = false;
@@ -119,9 +150,9 @@ function stageTitle() {
     progress: 2, cash: 18450, tokens: 5, peak: 3, hasSave: true,
     saveLabel: 'MISSION 03 · $18,450', storyComplete: false,
   });
-  camera.pos = [132, 31, 402];
-  camera.target = [0, 7, 152];
-  camera.fov = 57;
+  camera.pos = [170, 24, 310];
+  camera.target = [-190, 7, 430];
+  camera.fov = 56;
 }
 
 
@@ -244,17 +275,13 @@ function stageChase() {
   stageCar('taxi', 112, 268, Math.PI / 2, 0);
   stageCar('van', 196, 268, Math.PI / 2, 0);
   stageCar('sedan', 70, 266, Math.PI / 2, 0);
-  // Tyre smoke and sparks boiling off the rear wheels of the drifting hero car.
-  for (let i = 0; i < 12; i += 1) {
+  // Rubber and smoke from the drifting hero car, sparks where the cruiser rubbed its flank.
+  stageSkids(hero, 26, -0.35, 0.6);
+  stageSmoke(hero, 18, 7);
+  for (let i = 0; i < 6; i += 1) {
     combat.particles.push({
-      x: 128 + 2.4 + random() * 2.6, y: 0.35 + random() * 0.6, z: 251.4 + (random() - 0.5) * 2.4,
-      vx: 0, vy: 0, vz: 0, life: 520, maxLife: 999, color: rgb(0x9a928c), size: 0.8 + random() * 0.8, gravity: 0, smoke: true,
-    });
-  }
-  for (let i = 0; i < 5; i += 1) {
-    combat.particles.push({
-      x: 128 + 1.8, y: 0.3, z: 251.4 + (random() - 0.5) * 2.0, vx: 0, vy: 0, vz: 0,
-      life: 800, maxLife: 999, color: i % 2 ? rgb(0xffa53c) : rgb(0xff5a2a), size: 0.5, gravity: 0,
+      x: 130.6 + random() * 1.2, y: 0.4 + random() * 0.5, z: 249.6 + random() * 0.6, vx: 0, vy: 0, vz: 0,
+      life: 800, maxLife: 999, color: i % 2 ? rgb(0xffd27a) : rgb(0xff8a3a), size: 0.2 + random() * 0.15, gravity: 0,
     });
   }
   for (const [x, z, h] of [[150, 291, 1.7], [122, 293, 2.5], [112, 238, 0.6], [96, 239, 3.1], [64, 288, 1.2], [104, 237, 2.2]]) {
@@ -334,6 +361,8 @@ function stageStart() {
   hero.boosting = true;
   hero.drift = 1.2;
   hero.steer = -0.15;
+  stageSkids(hero, 18, -0.12, 0.42);
+  stageSmoke(hero, 6, 4);
   p.x = hero.x; p.z = hero.z; p.y = hero.y; p.heading = hero.heading;
 
   // Two stars for the stolen GT: a patrol cruiser closing on the rear quarter.
@@ -373,7 +402,29 @@ function stageStart() {
   camera.fov = 62;
 }
 
-/** On foot in Neon Midtown: the vault-plaza shootout, a stealable muscle car at the kerb. */
+/** A frozen exchange of fire: muzzle star at the shooter, a tracer streak `head` of the way down the line. */
+function stagedShot(x1, z1, x2, z2, y1, y2, color, head, opts = {}) {
+  const yaw = Math.atan2(x2 - x1, z2 - z1);
+  const mx = x1 + Math.sin(yaw) * (opts.reach ?? 0.78), mz = z1 + Math.cos(yaw) * (opts.reach ?? 0.78);
+  combat.tracers.push({
+    x1: mx, y1, z1: mz, x2, y2, z2, color, life: 999, maxLife: 999, head,
+    flash: opts.flash ?? true, flashSize: opts.flashSize ?? 0.5, spin: opts.spin ?? head * 7, ground: world.groundHeight(mx, mz),
+  });
+  return yaw;
+}
+
+/** Sparks frozen mid-burst where rounds strike metal or stone. */
+function stagedSparks(x, y, z, count, spread = 0.5, color = rgb(0xffd27a)) {
+  for (let i = 0; i < count; i += 1) {
+    const a = random() * Math.PI * 2, r = random() * spread;
+    combat.particles.push({
+      x: x + Math.cos(a) * r, y: y + random() * spread * 0.8, z: z + Math.sin(a) * r * 0.6,
+      vx: 0, vy: 0, vz: 0, life: 999, maxLife: 999, color: i % 3 ? color : rgb(0xffffff), size: 0.12 + random() * 0.12, gravity: 0,
+    });
+  }
+}
+
+/** On foot in Neon Midtown: an over-the-shoulder firefight at the Solaris Vault plaza. */
 function stageFoot() {
   clearScene();
   setStageHour(19.72);
@@ -381,45 +432,62 @@ function stageFoot() {
   hud.els.banner.classList.remove('show');
   careerPlayer({ cash: 31640, respect: 760, health: 81, armor: 55, mag: 22 });
   const p = combat.player;
-  combinePlayerOnFoot(61.5, 3.5, Math.PI + 0.06);
-  p.moving = true;
+  const px = 61.6, pz = 1.6;
+  combinePlayerOnFoot(px, pz, Math.PI + 0.3);
+  p.health = 81;
+  p.armor = 55;
+  p.moving = false;
   p.walkPhase = 0.8;
-  p.aimYaw = Math.PI + 0.04;
   setCameraAngles(Math.PI, 0.1);
 
-  // Vault security dug in across the plaza.
-  const spots = [[54, -22, 'smg'], [71, -27, 'pistol'], [63, -38, 'pistol'], [80, -18, 'smg']];
-  for (const [x, z, weapon] of spots) combat.spawnEnemy(x, z, { health: 85, style: 'goon', weapon, stationary: true, mission: true });
-  combat.enemies.forEach((e, i) => { e.heading = 0.1 * (i - 1.5); e.phase = i * 0.7; e.hitFlash = i === 0 ? 0.25 : 0; });
-  const y = 1.45;
-  combat.tracers.push({ x1: 61.9, y1: y, z1: 2.4, x2: 54.2, y2: y - 0.05, z2: -21.6, color: rgb(0xffd27a), life: 999, maxLife: 999 });
-  combat.tracers.push({ x1: 61.8, y1: y, z1: 2.5, x2: 55.0, y2: y - 0.1, z2: -21.0, color: rgb(0xffb44a), life: 999, maxLife: 999 });
-  combat.tracers.push({ x1: 71, y1: y, z1: -26.5, x2: 62.4, y2: y, z2: 2.0, color: rgb(0xff5a3c), life: 999, maxLife: 999 });
-  combat.tracers.push({ x1: 80, y1: y, z1: -17.6, x2: 63.4, y2: y + 0.1, z2: 1.6, color: rgb(0xff5a3c), life: 999, maxLife: 999 });
-  for (let i = 0; i < 8; i += 1) {
-    combat.particles.push({ x: 54.2, y: y, z: -21.6, vx: 0, vy: 0, vz: 0, life: 999, maxLife: 999, color: i % 2 ? rgb(0xffd27a) : rgb(0xa81f2a), size: 0.45, gravity: 0 });
-  }
-  combat.addImpact(54.2, y, -21.5, PALETTE.gold, 999);
-  combat.addImpact(66.5, 0.9, -8.5, rgb(0xffe08a), 999);
+  // Armoured vault guards dug in behind the plaza barricades and the colonnade.
+  const spots = [[53.6, -18.2, 'smg'], [72.4, -23.2, 'pistol'], [61.4, -32.6, 'smg'], [82.2, -14.2, 'pistol'], [45.5, -27.5, 'pistol']];
+  for (const [x, z, weapon] of spots) combat.spawnEnemy(x, z, { health: 85, style: 'guard', weapon, stationary: true, mission: true });
+  combat.enemies.forEach((e) => { e.heading = Math.atan2(px - e.x, pz - e.z); e.phase = 0; });
+  combat.enemies[0].hitFlash = 0.25;
 
-  // Stealable cars at the kerb, one right beside the player.
-  stageCar('muscle', 66.2, 0.4, Math.PI / 2 + 0.12, 0, { color: rgb(0x1f9e8f) });
-  stageCar('coupe', 40, 8.5, Math.PI / 2, 0, { color: rgb(0xff5a3c) });
-  stageCar('taxi', 92, -7.5, -Math.PI / 2, 0);
+  // The player's SMG burst at the nearest guard, his rounds sparking off the barricade.
+  const gy = 1.42;
+  const yaw = stagedShot(px, pz, 53.9, -18.0, gy, gy - 0.1, rgb(0xffe6a8), 0.42, { flashSize: 0.62 });
+  stagedShot(px, pz, 54.6, -18.9, gy, gy - 0.3, rgb(0xfff2c8), 0.83, { flash: false });
+  p.aimYaw = yaw;
+  p.heading = yaw + 0.25;
+  // Return fire: guard muzzle stars and orange streaks cracking past toward the car.
+  stagedShot(72.4, -23.2, 64.6, -0.6, 1.4, 1.05, rgb(0xff9a5a), 0.62, { flashSize: 0.55, reach: 0.7 });
+  stagedShot(61.4, -32.6, 63.3, -1.0, 1.4, 1.1, rgb(0xff8a4a), 0.74, { flashSize: 0.5, reach: 0.7 });
+  stagedShot(82.2, -14.2, 66.8, -0.4, 1.4, 1.0, rgb(0xffa060), 0.35, { flashSize: 0.45, reach: 0.7 });
+  // Brass casings tumbling out to the right of the gun.
+  for (let i = 0; i < 4; i += 1) {
+    combat.particles.push({
+      x: px + 0.45 + i * 0.2, y: 1.55 + i * 0.16 - (i > 2 ? 0.7 : 0), z: pz - 0.2 + i * 0.1, vx: 0, vy: 0, vz: 0,
+      life: 999, maxLife: 999, color: rgb(0xd9a441), size: 0.3, gravity: 0, casing: true, spin: i * 1.7,
+    });
+  }
+  // Rounds sparking off the muscle car's hood and the striped barricade.
+  stagedSparks(64.4, 1.15, -0.6, 6, 0.35);
+  stagedSparks(66.6, 1.1, -0.4, 3, 0.3);
+  stagedSparks(54.7, 1.0, -18.8, 7, 0.4);
+  combat.addImpact(54.6, 1.3, -18.4, PALETTE.gold, 999);
+
+  // Cover: the stealable muscle car broadside at the kerb, the bank's armoured van beyond.
+  stageCar('muscle', 65.6, -1.5, Math.PI / 2 + 0.08, 0, { color: rgb(0x1f9e8f) });
+  stageCar('van', 86.5, -8.4, -Math.PI / 2, 0, { color: rgb(0x3a4250) });
+  stageCar('coupe', 38, 7.5, Math.PI / 2, 0, { color: rgb(0xff5a3c) });
   // Heat arriving: one cruiser swinging in off the cross street.
   police.setWanted(2);
   police.setPeak(3);
-  const cop = police.spawnStagedCruiser(18, -6, Math.PI / 2 + 0.35);
+  const cop = police.spawnStagedCruiser(24, -6, Math.PI / 2 + 0.35);
   cop.sirenOn = true; cop.remote = true; cop.speed = 18;
-  // Bystanders scattering, and evening strollers further off.
-  traffic.addStagedPed(52, 9.5, -1.2, 'civ', { panic: 3, panicArms: true });
-  traffic.addStagedPed(76, 10.5, 1.4, 'civ', { panic: 3, panicArms: true });
-  traffic.addStagedPed(88, -1, 2.6, 'civ', { panic: 3, panicArms: true });
-  for (const [x, z, h] of [[30, 14, Math.PI / 2], [100, 15, -Math.PI / 2], [112, -14, 0.2], [20, -16, Math.PI]]) strollPed(x, z, h);
+  // Bystanders scattering.
+  traffic.addStagedPed(49, 9.5, -1.2, 'civ', { panic: 3, panicArms: true });
+  traffic.addStagedPed(92, 11, 1.4, 'civ', { panic: 3, panicArms: true });
+  traffic.addStagedPed(96, -2, 2.6, 'civ', { panic: 3, panicArms: true });
+  for (const [x, z, h] of [[30, 14, Math.PI / 2], [104, 15, -Math.PI / 2]]) strollPed(x, z, h);
   hud.dialogue('MATEO', 'Drop the vault guards, then take the green muscle car. Keys are in it.', 120000);
-  camera.pos = [64.6, 3.9, 11.4];
-  camera.target = [61.4, 2.0, -16];
-  camera.fov = 62;
+  // Tight over-the-shoulder camera, right of the player, low behind the car's tail.
+  camera.pos = [px + 1.9, 2.55, pz + 5.4];
+  camera.target = [px + 1.4, 1.3, pz - 30];
+  camera.fov = 54;
 }
 
 /** The city menu over the night skyline: full map, story arc, activities, garage. */

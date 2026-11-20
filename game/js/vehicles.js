@@ -7,6 +7,42 @@ import { VEHICLES, clamp, rgb, shade, lerp } from './config.js';
 
 let nextId = 1;
 
+/** Dark rubber laid on the asphalt by drifting rear tyres: {x, z, y, rot, alpha}. */
+export const skidMarks = [];
+/** Rising tyre-smoke puffs: {x, y, z, size, life, maxLife, vy}. */
+export const tyreSmoke = [];
+const SKID_MAX = 420;
+
+/** Rear-tyre contact points, in world space. */
+function rearWheels(v) {
+  const f = vehicleForward(v), r = vehicleRight(v);
+  const back = -v.spec.wheelBase / 2, half = v.spec.width * 0.4;
+  return [-1, 1].map((side) => [v.x + r[0] * side * half + f[0] * back, v.z + r[1] * side * half + f[1] * back]);
+}
+
+/** Lay a stretch of skid and a smoke puff at the rear wheels; `amount` is 0..1. */
+export function emitTyreFx(v, amount, smoke = true) {
+  for (const [x, z] of rearWheels(v)) {
+    skidMarks.push({ x, z, y: v.y + 0.075, rot: v.heading, alpha: 0.32 + amount * 0.3 });
+    if (smoke && tyreSmoke.length < 160) {
+      tyreSmoke.push({ x: x + (Math.random() - 0.5) * 0.5, y: v.y + 0.35, z: z + (Math.random() - 0.5) * 0.5, size: 0.7 + Math.random() * 0.5, life: 1.6, maxLife: 1.6, vy: 0.6 + Math.random() * 0.5 });
+    }
+  }
+  if (skidMarks.length > SKID_MAX) skidMarks.splice(0, skidMarks.length - SKID_MAX);
+}
+
+/** Age the tyre smoke (it swells and thins) and slowly fade old skid marks. */
+export function tickTyreFx(dt) {
+  for (let i = tyreSmoke.length - 1; i >= 0; i -= 1) {
+    const p = tyreSmoke[i];
+    p.life -= dt;
+    p.y += p.vy * dt;
+    p.size += dt * 1.6;
+    if (p.life <= 0) tyreSmoke.splice(i, 1);
+  }
+  for (const m of skidMarks) m.alpha = Math.max(0, m.alpha - dt * 0.004);
+}
+
 export function createVehicle(type, x, z, heading = 0, options = {}) {
   const spec = VEHICLES[type] ?? VEHICLES.sedan;
   const v = {
@@ -126,8 +162,14 @@ export function updateVehicle(v, controls, dt, world, options = {}) {
   v.lean = lerp(v.lean, -steerInput * clamp(Math.abs(vf) / 30, 0, 1) * 0.09, clamp(dt * 6, 0, 1));
   v.roll = v.lean;
 
-  // Drift angle for smoke and tyre squeal.
+  // Drift angle for smoke and tyre squeal; hard slides lay rubber and smoke.
   v.drift = Math.abs(vl);
+  v.skidTimer = (v.skidTimer ?? 0) - dt;
+  const sliding = (v.drift > 2.6 || (controls.handbrake && Math.abs(vf) > 7)) && Math.abs(vf) > 5 && !v.airborne;
+  if (sliding && v.skidTimer <= 0 && !options.quiet) {
+    v.skidTimer = 0.03;
+    emitTyreFx(v, clamp(v.drift / 8, 0, 1), true);
+  }
 
   v.velocityX = fx * vf + rx * vl;
   v.velocityZ = fz * vf + rz * vl;
@@ -568,7 +610,7 @@ function buildWheel(b, P, cx, cz, side, r, width, steerYaw, spin, rimColor, side
  * ahead and behind, nitro flames, siren strobes with red/blue pools, beacons and smoke.
  * `add(x, y, z, color, radius, alpha, flat)`; a flat glow is {sx, sz, rot} on the ground.
  */
-export function vehicleGlow(v, time, add) {
+export function vehicleGlow(v, time, add, beam = null, beamGain = 1) {
   const forward = vehicleForward(v);
   const right = vehicleRight(v);
   const spec = v.spec;
@@ -581,6 +623,8 @@ export function vehicleGlow(v, time, add) {
     const h = at(side * W * 0.3, headY, L * 0.475);
     add(h[0], h[1], h[2], rgb(0xeef6ff), 0.62, 0.62);
     add(h[0], h[1], h[2], rgb(0xffffff), 0.22, 0.9);
+    // A soft volumetric cone reaching down onto the road ahead.
+    if (beam && beamGain > 0.02) beam(h, at(side * W * 0.55, 0.1, L * 0.5 + 11), 0.16, 1.9, rgb(0xfff0d0), 0.1 * beamGain);
   }
   // The tail bar: a row of red LEDs across the back.
   const tailAlpha = v.braking ? 0.75 : 0.42;
@@ -601,6 +645,13 @@ export function vehicleGlow(v, time, add) {
       add(n[0], n[1], n[2], rgb(0xff7a1e), 0.7, 0.8);
       const n2 = at(side * W * 0.2, style.sill + 0.08, -L * 0.6);
       add(n2[0], n2[1], n2[2], rgb(0x3fa8ff), 0.42, 0.5);
+      // Afterburner plume: a blue-hot core flaring to an orange tongue behind the tips.
+      const tip = at(side * W * 0.2, style.sill + 0.1, -L * 0.52);
+      const flick = 0.85 + Math.sin(time * 47 + side * 2) * 0.15;
+      if (beam) {
+        beam(tip, at(side * W * 0.2, style.sill + 0.16, -L * 0.52 - 1.1 * flick), 0.12, 0.05, rgb(0x6fc4ff), 0.9);
+        beam(tip, at(side * W * 0.21, style.sill + 0.22, -L * 0.52 - 2.0 * flick), 0.2, 0.08, rgb(0xff8a2a), 0.55);
+      }
     }
   }
   if (v.police && v.sirenOn) {

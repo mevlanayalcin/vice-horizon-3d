@@ -124,7 +124,7 @@ export const SKY_PRESETS = {
   },
   golden: {
     name: 'Golden Hour', clock: '18:55',
-    sunDir: [-0.72, 0.28, 0.34],
+    sunDir: [-0.72, 0.21, 0.34],
     sunColor: rgb(0xffb56a), skyTop: rgb(0x241d5e), skyHorizon: rgb(0xff8f52),
     fogColor: rgb(0xe89a72), fogDensity: 0.00118, ambientSky: rgb(0x9a7ab8), ambientGround: rgb(0x6c4b3b),
     sunGlow: rgb(0xffb169), cityGlow: rgb(0xff9a5c), night: 0.22, stars: 0.0, sunSize: 0.9992, exposure: 1.02,
@@ -259,7 +259,7 @@ export function isNightEnv(env) {
 }
 
 export const RADIO = [
-  { id: 'sunset', name: 'SUNSET FM 96.6', genre: 'Miami Synthwave' },
+  { id: 'sunset', name: 'SUNSET FM 96.6', genre: 'Coastal Synthwave' },
   { id: 'coral', name: 'CORAL 88.1', genre: 'Sunset Lo-Fi' },
   { id: 'neon', name: 'NEON DRIVE 101.9', genre: 'Bass Chase' },
 ];

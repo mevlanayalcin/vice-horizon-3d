@@ -71,14 +71,15 @@ export function createCameraRig(world) {
   }
 
   /** The slow drift over the bay behind the title menu. */
+  /** The title flyover: a slow drift above Sunset Beach, looking down the coast into the sun. */
   function titleOrbit(t) {
-    camera.pos[0] = 118 + Math.sin(t * 0.06) * 34;
-    camera.pos[1] = 30 + Math.sin(t * 0.11) * 3;
-    camera.pos[2] = 404 + Math.cos(t * 0.05) * 16;
-    camera.target[0] = 4 + Math.sin(t * 0.04) * 16;
-    camera.target[1] = 8;
-    camera.target[2] = 150;
-    camera.fov = 57;
+    camera.pos[0] = 170 + Math.sin(t * 0.045) * 46;
+    camera.pos[1] = 24 + Math.sin(t * 0.09) * 4;
+    camera.pos[2] = 296 + Math.cos(t * 0.035) * 14;
+    camera.target[0] = -190 + Math.sin(t * 0.03) * 40;
+    camera.target[1] = 7;
+    camera.target[2] = 412 + Math.cos(t * 0.04) * 18;
+    camera.fov = 56;
   }
 
   return Object.assign(rig, { followCar, followOnFoot, titleOrbit });

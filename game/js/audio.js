@@ -1,5 +1,5 @@
 // audio.js — every sound is synthesised in the browser with Web Audio. Three original
-// radio stations (Miami synthwave, sunset lo-fi, bass chase) run on a look-ahead
+// radio stations (coastal synthwave, sunset lo-fi, bass chase) run on a look-ahead
 // sequencer; engine pitch, tyre screech, police siren, gunshots, crashes and UI
 // blips are generated from oscillators and filtered noise. Nothing is downloaded.
 

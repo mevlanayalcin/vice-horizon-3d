@@ -276,7 +276,10 @@ void main() {
   float dist = length(uCamPos - vWorld);
   float fog = 1.0 - exp(-dist * uFogDensity);
   fog *= smoothstep(0.35, 1.0, 1.0 - vEmit * 0.55);
-  col = mix(col, uFogColor, clamp(fog, 0.0, 0.9));
+  // Atmospheric depth: haze glows gold toward the sun and cools to rose-violet away from it.
+  float toSun = pow(max(dot(-V, sun), 0.0), 5.0);
+  vec3 fogCol = mix(uFogColor * mix(vec3(0.90, 0.80, 1.02), vec3(1.0), uNight), uSunColor * 1.05, toSun * 0.65 * (1.0 - uNight));
+  col = mix(col, fogCol, clamp(fog, 0.0, 0.9));
   fragColor = vec4(outputTone(col), 1.0);
 }`;
 
@@ -403,16 +406,42 @@ float fbm(vec2 p) {
   }
   return v;
 }
+// The far shore across the bay: a backlit skyline of towers and hills on the horizon.
+float skylineHeight(float az) {
+  float cell = floor(az * 210.0);
+  float h = hash21(vec2(cell, 3.7));
+  float tower = h > 0.55 ? 0.006 + pow(hash21(vec2(cell, 9.1)), 2.0) * 0.030 : 0.003 + h * 0.006;
+  float cluster = smoothstep(0.25, 0.75, vnoise(vec2(az * 9.0, 1.3)));
+  float hills = 0.004 + vnoise(vec2(az * 22.0, 5.2)) * 0.008;
+  return max(hills, tower * cluster);
+}
 void main() {
   vec4 far = uInvVP * vec4(vNdc, 1.0, 1.0);
   vec3 dir = normalize(far.xyz / far.w - uCamPos);
+  vec3 sunN = normalize(uSunDir);
   float up = clamp(dir.y, -0.2, 1.0);
   float t = pow(clamp(up, 0.0, 1.0), 0.52);
   vec3 col = mix(uSkyHorizon, uSkyTop, t);
   vec3 mid = mix(uSkyHorizon, uCityGlow, 0.55) * 1.02;
   col = mix(mix(uSkyHorizon, mid, smoothstep(0.0, 0.30, t)), col, smoothstep(0.22, 1.0, t));
   col *= mix(1.0, 0.86, smoothstep(0.3, 1.0, t));
-  float sd = max(dot(dir, normalize(uSunDir)), 0.0);
+  // Tropical sunset layering: molten gold on the horizon under the sun, coral, rose,
+  // magenta and violet climbing to indigo, weighted by how low the sun hangs.
+  float sunset = (1.0 - smoothstep(0.55, 0.95, uNight)) * (1.0 - smoothstep(0.18, 0.62, sunN.y));
+  vec2 dxz = normalize(dir.xz + vec2(1e-5));
+  float facing = dot(dxz, normalize(sunN.xz + vec2(1e-5))) * 0.5 + 0.5;
+  float e = clamp(up, 0.0, 1.0);
+  vec3 gold = mix(vec3(1.0, 0.50, 0.34), vec3(1.0, 0.70, 0.30), facing);
+  vec3 coral = mix(vec3(0.92, 0.36, 0.44), vec3(1.0, 0.46, 0.30), facing);
+  vec3 rose = mix(vec3(0.62, 0.22, 0.52), vec3(0.90, 0.30, 0.46), facing);
+  vec3 violet = vec3(0.30, 0.16, 0.46);
+  vec3 indigo = vec3(0.07, 0.07, 0.24);
+  vec3 band = mix(gold, coral, smoothstep(0.0, 0.07, e));
+  band = mix(band, rose, smoothstep(0.05, 0.20, e));
+  band = mix(band, violet, smoothstep(0.17, 0.42, e));
+  band = mix(band, indigo, smoothstep(0.38, 0.95, e));
+  col = mix(col, band, sunset * 0.92);
+  float sd = max(dot(dir, sunN), 0.0);
   float glow = pow(sd, 8.0) * 0.22 + pow(sd, 64.0) * 0.42 + pow(sd, 400.0) * 2.2 + pow(sd, 2400.0) * 2.5;
   col += uSunColor * glow;
   float horizon = exp(-max(dir.y, 0.0) * 8.0);
@@ -426,13 +455,52 @@ void main() {
   cloud = smoothstep(0.50, 0.80, cloud) * smoothstep(0.015, 0.18, dir.y);
   vec3 cloudColor = mix(uSkyHorizon * 0.9, uSunColor * 1.15, clamp(pow(sd, 2.0) * 0.9 + 0.18, 0.0, 1.0));
   cloudColor = mix(cloudColor, mix(uCityGlow, vec3(0.95, 0.55, 0.75), 0.4), uNight * 0.5);
-  col = mix(col, cloudColor, cloud * 0.68);
+  col = mix(col, cloudColor, cloud * 0.68 * (1.0 - sunset * 0.55));
+  // Long stratus bands over the sea, underlit gold toward the sun and magenta away from it,
+  // with a hot silver lining where they cross the sun's corona.
+  float az = atan(dir.z, dir.x);
+  // atan jumps at due west: blend each azimuth noise with its 2pi twin across the seam.
+  float azB = az - sign(az) * 6.2832;
+  float seam = smoothstep(2.4, 3.1416, abs(az)) * 0.5;
+  float bandY = e * 30.0 + mix(vnoise(vec2(az * 3.0, 0.5)), vnoise(vec2(azB * 3.0, 0.5)), seam) * 2.2;
+  float streak = mix(fbm(vec2(az * 2.6 + uTime * 0.002, bandY)), fbm(vec2(azB * 2.6 + uTime * 0.002, bandY)), seam);
+  streak = smoothstep(0.44, 0.66, streak) * smoothstep(0.012, 0.05, e) * (1.0 - smoothstep(0.16, 0.34, e));
+  float puff = smoothstep(0.48, 0.74, mix(fbm(vec2(az * 5.0, e * 12.0) + 4.0), fbm(vec2(azB * 5.0, e * 12.0) + 4.0), seam)) * smoothstep(0.08, 0.16, e) * (1.0 - smoothstep(0.30, 0.5, e));
+  float strat = clamp(streak + puff * 0.7, 0.0, 1.0) * sunset;
+  // Backlit plum near the sun with molten rims; sunlit rose-pink across the rest of the sky.
+  vec3 underlit = mix(vec3(1.05, 0.52, 0.62), vec3(0.42, 0.13, 0.26), pow(facing, 1.6));
+  underlit = mix(underlit, vec3(0.30, 0.12, 0.36), smoothstep(0.12, 0.30, e) * (1.0 - facing * 0.4));
+  float edge = clamp(strat * (1.0 - strat) * 4.0, 0.0, 1.0);
+  float lining = pow(sd, 10.0) * 2.0 + pow(sd, 3.0) * 0.35;
+  vec3 rimCol = vec3(1.0, 0.70, 0.34) * (0.25 + lining) * edge * 0.9;
+  col = mix(col, underlit + rimCol * pow(facing, 2.0), clamp(strat * 1.25, 0.0, 0.92));
+  // Soft crepuscular rays fanning up from the sun through the gaps.
+  vec3 sideA = normalize(cross(sunN, vec3(0.0, 1.0, 0.0)));
+  vec3 sideB = cross(sideA, sunN);
+  float ang = atan(dot(dir, sideB), dot(dir, sideA));
+  float angB = ang - sign(ang) * 6.2832;
+  float angSeam = smoothstep(2.4, 3.1416, abs(ang)) * 0.5;
+  float rayN = mix(vnoise(vec2(ang * 9.0, 0.0)) * 0.6 + vnoise(vec2(ang * 23.0, 7.0)) * 0.4,
+                   vnoise(vec2(angB * 9.0, 0.0)) * 0.6 + vnoise(vec2(angB * 23.0, 7.0)) * 0.4, angSeam);
+  float rays = smoothstep(0.35, 0.95, rayN);
+  col += uSunColor * rays * pow(sd, 6.0) * 0.20 * sunset * (1.0 - strat * 0.7) * step(0.0, dir.y);
   vec3 cell = floor(dir * 330.0);
   float starSeed = hash21(cell.xz + cell.y * 17.3);
   float star = smoothstep(0.9975, 1.0, starSeed) * smoothstep(0.02, 0.35, dir.y);
   col += vec3(0.85, 0.9, 1.0) * star * uStars * 1.6;
   float disc = smoothstep(uSunSize - 0.00022, uSunSize + 0.00022, sd);
-  col += uSunColor * disc * 3.2 * (1.0 - cloud * 0.6) * (1.0 - uNight * 0.8);
+  float limb = 0.75 + 0.25 * smoothstep(uSunSize, 1.0, sd);
+  col += mix(uSunColor, vec3(1.0, 0.86, 0.55), 0.5) * disc * limb * 3.6 * (1.0 - cloud * 0.6) * (1.0 - strat * 0.55) * (1.0 - uNight * 0.8);
+  // The far shore across the bay: a backlit skyline silhouette with a few lit windows.
+  float shore = smoothstep(0.15, 0.55, dxz.y);
+  float hgt = skylineHeight(az);
+  if (dir.y > -0.004 && dir.y < hgt && shore > 0.0) {
+    vec3 sil = mix(vec3(0.20, 0.10, 0.24), uFogColor * 0.55, 0.45) * mix(1.0, 0.45, uNight);
+    sil += uSunColor * pow(facing, 4.0) * 0.06 * (1.0 - uNight);
+    float win = step(0.86, hash21(floor(vec2(az * 1400.0, dir.y * 1400.0)))) * smoothstep(0.003, 0.006, hgt - dir.y + 0.003);
+    sil += vec3(1.0, 0.78, 0.48) * win * (0.25 + uNight * 0.9);
+    col = mix(col, sil, shore * 0.92);
+  }
   fragColor = vec4(outputTone(col), 1.0);
 }`;
 

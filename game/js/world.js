@@ -25,6 +25,7 @@ export function createWorld(renderer) {
   const pickups = [];
   const props = [];
   const landmarks = [];
+  const hydrants = [];
   let hotelCount = 0;
   let shopCount = 0;
 
@@ -283,6 +284,11 @@ export function createWorld(renderer) {
     }
     // Traffic signals at the six main boulevard junctions.
     for (const x of XS) addTrafficLight(x + 15, boulevardZ + 19, Math.PI);
+    // Fire hydrants on the kerbs: drawn live so a car can shear one off into a geyser.
+    for (const x of XS) {
+      for (let z = -404; z < 230; z += 104) hydrants.push({ x: x + 12.9, z, broken: false, spray: 0 });
+      hydrants.push({ x: x + 42, z: boulevardZ - 19.4, broken: false, spray: 0 });
+    }
     // Beachfront palms and props.
     for (let x = -430; x < 500; x += 17) {
       addPalm(x + rng() * 3, 307 + rng() * 2, 1.0 + rng() * 0.45, 'beach');
@@ -1360,6 +1366,7 @@ export function createWorld(renderer) {
     const b = builder('midtown');
     b.cylinder(65, 132, -65, 3.2, 0.2, 16, 8, PALETTE.gold, { e: 1, capTop: true });
     glow(65, 148, -65, PALETTE.gold, 16, 0.75);
+    addVaultPlaza();
     // The Grand Palms hotel.
     addArtDecoHotel(-118, 202, 46, 30, rgb(0xf7cdb0), PALETTE.neonPink, 'MIRAMAR');
     // Safehouse garage.
@@ -1413,6 +1420,98 @@ export function createWorld(renderer) {
     props.push({ type: 'ramp', x: 320, z: -18, w: 14, d: 30, h: 3.2, rot: Math.PI });
     props.push({ type: 'ramp', x: -350, z: 120, w: 14, d: 28, h: 2.8, rot: Math.PI / 2 });
     for (const r of props) addRamp(r);
+  }
+
+  /**
+   * The Solaris Vault Bank Plaza: an Art Deco colonnade in front of the tower's podium,
+   * the gold SOLARIS VAULT marquee over glowing lobby glass, inlaid stone paving, security
+   * bollards, striped barricades and the bank's loot cases on the steps.
+   */
+  function addVaultPlaza() {
+    const b = builder('midtown');
+    const cx = 65, front = -42;
+    const stone = rgb(0xe9dccb), stoneDark = rgb(0xb9a893), bronze = rgb(0x8a6a3c);
+    // Paving: pale stone with gold inlay bands radiating from the doors.
+    b.flat(cx, -27, 52, 30, 0.075, rgb(0xcbbca8));
+    for (let i = -3; i <= 3; i += 1) b.flat(cx + i * 7, -27, 0.28, 30, 0.08, PALETTE.gold, { e: 0.35 });
+    for (const z of [-16, -24, -32]) b.flat(cx, z, 52, 0.24, 0.08, mix3(PALETTE.gold, stone, 0.4), { e: 0.2 });
+    // Three broad steps up to the portico.
+    for (let s = 0; s < 3; s += 1) b.box(cx, 0.14 + s * 0.14, front + 5.2 - s * 1.3, 38 - s * 1.2, 0.28 + s * 0.28, 2.6 + s * 0.2, s % 2 ? stone : stoneDark, { omitBottom: true });
+    // Glowing lobby glass with bronze mullions behind the columns.
+    b.box(cx, 3.4, front + 0.25, 22, 6.6, 0.3, rgb(0xffd79a), { e: 0.75, omitBottom: true });
+    for (let i = -5; i <= 5; i += 1) b.box(cx + i * 2.2, 3.4, front + 0.45, 0.16, 6.6, 0.16, bronze, { omitBottom: true, s: -0.5 });
+    b.box(cx, 6.85, front + 0.45, 22.4, 0.3, 0.3, bronze, { omitBottom: true, s: -0.5 });
+    for (let i = -2; i <= 2; i += 1) glow(cx + i * 4.5, 3.2, front + 1.2, rgb(0xffcf86), 4.2, 0.32);
+    // The colonnade: fluted columns with gold capitals and bases.
+    const colZ = front + 3.6;
+    for (let i = 0; i < 8; i += 1) {
+      const x = cx - 15.75 + i * 4.5;
+      b.cylinder(x, 0.84, colZ, 0.95, 0.95, 0.5, 12, stoneDark, {});
+      b.cylinder(x, 1.34, colZ, 0.72, 0.62, 8.6, 14, stone, { capTop: false });
+      b.cylinder(x, 9.94, colZ, 0.7, 1.05, 0.5, 12, PALETTE.gold, { s: -0.6 });
+      collider(x - 0.8, x + 0.8, colZ - 0.8, colZ + 0.8, 'prop');
+    }
+    // Entablature, stepped Deco crown and the neon marquee.
+    b.box(cx, 11.4, colZ - 0.4, 37, 2.4, 5.4, stone, { omitBottom: true });
+    b.box(cx, 12.75, colZ - 0.8, 33, 0.3, 4.6, PALETTE.gold, { omitBottom: true, e: 0.4 });
+    b.box(cx, 13.8, colZ - 1.2, 26, 1.8, 3.6, stone, { omitBottom: true });
+    b.box(cx, 15.4, colZ - 1.6, 14, 1.4, 2.8, stone, { omitBottom: true });
+    b.box(cx, 16.9, colZ - 1.8, 5, 1.6, 2.2, PALETTE.gold, { e: 0.6, omitBottom: true });
+    glow(cx, 17.2, colZ, PALETTE.gold, 6, 0.5);
+    for (const side of [-1, 1]) {
+      // Fluted pylons with vertical cyan neon fins either side of the portico.
+      const px = cx + side * 20.5;
+      b.box(px, 8.5, colZ - 0.5, 3.2, 17, 4.2, stone, { omitBottom: true });
+      for (const f of [-0.9, 0, 0.9]) b.box(px + f, 8.5, colZ + 1.65, 0.16, 15, 0.16, PALETTE.neonCyan, { e: 1, omitBottom: true });
+      glow(px, 9, colZ + 2.4, PALETTE.neonCyan, 7, 0.35);
+    }
+    addNeonText(b, 'SOLARIS VAULT', {
+      x: cx, y: 10.55, z: colZ + 2.42, height: 1.5, normal: [0, 1], color: PALETTE.gold,
+      weight: 0.14, board: rgb(0x1b1520), boardPad: 0.32, glow, glowAlpha: 0.55,
+    });
+    addNeonText(b, 'EST 1931', { x: cx, y: 13.9, z: colZ + 0.62, height: 0.7, normal: [0, 1], color: PALETTE.neonPink, weight: 0.13 });
+    // Uplights washing the columns gold.
+    for (let i = 0; i < 8; i += 1) glow(cx - 15.75 + i * 4.5, 1.2, colZ + 1.1, PALETTE.neonAmber, 2.4, 0.45);
+    // Security bollards along the kerb with lit caps.
+    for (let x = cx - 24; x <= cx + 24; x += 3) {
+      if (Math.abs(x - cx) < 4) continue;
+      b.cylinder(x, 0.08, -13.4, 0.24, 0.22, 0.95, 10, rgb(0x4a4c55), { s: -0.4 });
+      b.cylinder(x, 1.03, -13.4, 0.23, 0.18, 0.12, 10, PALETTE.gold, { e: 0.9 });
+    }
+    // Striped tactical barricades angled across the plaza.
+    const stripe = [PALETTE.white, PALETTE.policeRed];
+    for (const [x, z, rot] of [[55, -19.5, 0.25], [73, -24.5, -0.2], [62, -34, 0.1], [83, -15.5, -0.35]]) {
+      const c = Math.cos(rot), s = Math.sin(rot);
+      for (let k = 0; k < 6; k += 1) {
+        const u = (k - 2.5) * 0.62;
+        b.box(x + u * c, 0.82, z - u * s, 0.62, 0.32, 0.16, stripe[k % 2], { rotY: rot, omitBottom: true, e: 0.08 });
+      }
+      for (const u of [-1.7, 1.7]) {
+        b.box(x + u * c, 0.45, z - u * s, 0.12, 0.9, 0.12, rgb(0x2a2c33), { omitBottom: true });
+        b.box(x + u * c, 0.06, z - u * s, 0.16, 0.12, 0.9, rgb(0x2a2c33), { rotY: rot, omitBottom: true });
+      }
+      glow(x + 1.8 * c, 1.08, z - 1.8 * s, PALETTE.neonAmber, 0.5, 0.8);
+    }
+    // Gold loot: bullion crates and briefcases stacked on the steps by the armoured van.
+    for (const [x, z, w, h, d] of [[78.5, -36.2, 1.3, 0.75, 0.9], [80.1, -36.0, 1.2, 0.6, 0.9], [79.2, -36.1, 1.0, 0.55, 0.8]]) {
+      const y = 0.84 + (x === 79.2 ? 0.75 : 0);
+      b.box(x, y + h / 2, z, w, h, d, rgb(0x5a3c1e), { omitBottom: true });
+      b.box(x, y + h + 0.03, z, w * 0.86, 0.06, d * 0.8, PALETTE.gold, { e: 0.9, omitBottom: true });
+    }
+    for (const [x, z] of [[49.5, -35.5], [51, -35.7]]) {
+      b.box(x, 1.08, z, 0.9, 0.48, 0.22, rgb(0x1f1c22), { omitBottom: true, s: -0.6 });
+      b.box(x, 1.36, z, 0.3, 0.06, 0.06, PALETTE.gold, { e: 0.8, omitBottom: true });
+    }
+    glow(79.2, 2.0, -35.6, PALETTE.gold, 2.6, 0.6);
+    glow(50.2, 1.4, -35.2, PALETTE.gold, 1.4, 0.45);
+    // Clipped planters flanking the steps.
+    for (const x of [cx - 23, cx + 23]) {
+      b.box(x, 0.5, -31, 3, 1, 3, stoneDark, { omitBottom: true });
+      b.ellipsoid(x, 1.7, -31, 1.4, 0.9, 1.4, PALETTE.palm, { segments: 8, rings: 4 });
+      b.ellipsoid(x + 0.4, 2.3, -31.3, 0.8, 0.7, 0.8, PALETTE.palmLight, { segments: 7, rings: 4 });
+      glow(x, 1.2, -29.3, PALETTE.neonAmber, 1.6, 0.4);
+    }
+    landmarks.push({ name: 'Solaris Vault Plaza', x: cx, z: -27 });
   }
 
   function addSafehouse() {
@@ -1619,6 +1718,7 @@ export function createWorld(renderer) {
     tokens,
     pickups,
     props,
+    hydrants,
     map,
     landmarks,
     safehouse: SAFEHOUSE,

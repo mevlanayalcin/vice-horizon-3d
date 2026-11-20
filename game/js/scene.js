@@ -3,9 +3,9 @@
 // player and gangs with tracers and sparks, mission crates, sun tokens, pickups, the
 // gold mission beacon, cyan activity rings and the police helicopter's searchlight.
 
-import { PALETTE, SAFEHOUSE, TAU, rgb } from './config.js';
+import { PALETTE, SAFEHOUSE, TAU, rgb, shade } from './config.js';
 import { MeshBuilder } from './meshkit.js';
-import { buildVehicle, buildHelicopter, vehicleGlow } from './vehicles.js';
+import { buildVehicle, buildHelicopter, vehicleGlow, skidMarks, tyreSmoke } from './vehicles.js';
 import { buildCharacter } from './combat.js';
 
 /** Build the frame's dynamic geometry, glow sprites and blob shadows. */
@@ -26,6 +26,8 @@ export function buildDynamicScene(ctx) {
     else glows.push({ x, y, z, color, r, alpha });
   };
 
+  const addBeamGlow = (from, to, r0, r1, color, alpha) => glows.push({ beam: true, x: from[0], y: from[1], z: from[2], x2: to[0], y2: to[1], z2: to[2], r: r0, r2: r1, color, alpha });
+
   // Static neon halos.
   const nightBoost = 0.34 + env.night * 0.66;
   for (const g of world.glows) {
@@ -42,7 +44,7 @@ export function buildDynamicScene(ctx) {
     const dx = car.x - camX, dz = car.z - camZ;
     if (dx * dx + dz * dz > 330 * 330) continue;
     buildVehicle(b, car, time, { lod: dx * dx + dz * dz > 75 * 75 ? 1 : 0 });
-    vehicleGlow(car, time, addGlow);
+    vehicleGlow(car, time, addGlow, dx * dx + dz * dz < 140 * 140 ? addBeamGlow : null, Math.min(1, Math.max(0, env.night - 0.1) * 1.8));
     const groundY = world.groundHeight(car.x, car.z);
     shadows.push({ x: car.x, z: car.z, y: groundY + 0.03, rx: car.spec.width * 0.62, rz: car.spec.length * 0.6, alpha: 0.55, rot: car.heading });
     shadows.push({ x: car.x, z: car.z, y: groundY + 0.032, rx: car.spec.width * 0.42, rz: car.spec.length * 0.42, alpha: 0.35, rot: car.heading });
@@ -70,6 +72,42 @@ export function buildDynamicScene(ctx) {
       lod: dx * dx + dz * dz > 50 * 50 ? 1 : 0,
     }, time);
     shadows.push({ x: ped.x, z: ped.z, y: world.groundHeight(ped.x, ped.z) + 0.025, rx: 0.55, rz: 0.55, alpha: 0.25 });
+  }
+
+  // Skid marks as dark rubber streaks on the road, tyre smoke as soft rising halos.
+  for (const m of skidMarks) {
+    if (m.alpha < 0.02) continue;
+    const dx = m.x - camX, dz = m.z - camZ;
+    if (dx * dx + dz * dz > 160 * 160) continue;
+    shadows.push({ x: m.x, z: m.z, y: m.y, rx: 0.17, rz: 0.95, alpha: m.alpha, rot: m.rot });
+  }
+  for (const puff of tyreSmoke) {
+    const life = puff.life / puff.maxLife;
+    addGlow(puff.x, puff.y, puff.z, rgb(0x9a928c), puff.size, life * 0.16);
+  }
+
+  // Fire hydrants: squat red posts with brass caps, or a sheared stump throwing a geyser.
+  for (const h of world.hydrants ?? []) {
+    const dx = h.x - camX, dz = h.z - camZ;
+    if (dx * dx + dz * dz > 120 * 120) continue;
+    const gy = world.groundHeight(h.x, h.z);
+    const red = rgb(0xd8322c), brass = rgb(0xe0b048);
+    if (!h.broken) {
+      b.cylinder(h.x, gy, h.z, 0.2, 0.2, 0.12, 8, shade(red, 0.8), {});
+      b.cylinder(h.x, gy + 0.12, h.z, 0.15, 0.14, 0.52, 8, red, { s: -0.3 });
+      b.cylinder(h.x, gy + 0.64, h.z, 0.17, 0.06, 0.16, 8, brass, { s: -0.6 });
+      b.box(h.x, gy + 0.44, h.z, 0.46, 0.1, 0.1, red, { omitBottom: true, s: -0.3 });
+      b.box(h.x, gy + 0.44, h.z, 0.1, 0.1, 0.36, brass, { omitBottom: true, s: -0.5 });
+    } else {
+      b.cylinder(h.x, gy, h.z, 0.2, 0.18, 0.16, 8, shade(red, 0.7), {});
+      if (h.spray > 0) {
+        const k = Math.min(1, h.spray / 3);
+        const top = 3.2 + Math.sin(time * 9 + h.x) * 0.3;
+        glows.push({ beam: true, x: h.x, y: gy + 0.2, z: h.z, x2: h.x, y2: gy + top * k + 0.4, z2: h.z, r: 0.18, r2: 0.55, color: [0.75, 0.9, 1.0], alpha: 0.5 * k });
+        addGlow(h.x, gy + top * k, h.z, [0.7, 0.85, 1.0], 1.1, 0.25 * k);
+        addGlow(h.x, gy + 0.05, h.z, [0.5, 0.7, 0.85], 2.4, 0.22 * k, { sx: 1, sz: 1 });
+      }
+    }
   }
 
   // Player + enemies + tracers/particles.

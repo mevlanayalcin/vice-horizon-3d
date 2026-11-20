@@ -40,7 +40,7 @@ export const MISSIONS = [
     steps: [
       { type: 'goto', pos: [65, -16], radius: 9, label: 'Case the Solaris Vault plaza in Neon Midtown' },
       {
-        type: 'kill', pos: [65, -18], radius: 28, label: 'Take down the vault security', count: 6,
+        type: 'kill', pos: [65, -18], radius: 28, label: 'Take down the vault security', count: 6, guards: true,
         spawn: [[38, -30], [92, -32], [36, -96], [94, -98], [50, -8], [82, -8]], health: 85, raise: 1,
       },
       { type: 'escape', label: 'Lose the police · break their line of sight' },
@@ -164,7 +164,7 @@ export function createMissions({ world, combat, police, bus }) {
       spawns.forEach(([x, z], i) => {
         const enemy = combat.spawnEnemy(x, z, {
           health: s.health ?? 80,
-          style: 'goon',
+          style: s.guards ? 'guard' : 'goon',
           weapon: i % 3 === 0 ? 'smg' : 'pistol',
           cash: 55 + i * 15,
           mission: true,

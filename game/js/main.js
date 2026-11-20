@@ -7,7 +7,7 @@ import { PALETTE, SAFEHOUSE, STEP, clamp, createRandom, lerp } from './config.js
 import { createRenderer, cross3, normalize3 } from './renderer3d.js';
 import { createWorld } from './world.js';
 import { envAtHour, timeNameAt, clockAt } from './daycycle.js';
-import { createVehicle, updateVehicle } from './vehicles.js';
+import { createVehicle, updateVehicle, tickTyreFx, skidMarks, tyreSmoke } from './vehicles.js';
 import { createTraffic } from './traffic.js';
 import { createPolice } from './police.js';
 import { createCombat } from './combat.js';
@@ -142,7 +142,7 @@ const cityMenu = createCityMenu({ painter: hud.painter, missions, activities, pr
 
 const game = {
   renderer, world, audio, combat, traffic, police, missions, activities, progression, hud, save,
-  tokens, pickups, hour: 18.62, playTime: 0,
+  tokens, pickups, hour: 19.05, playTime: 0,
   get cash() { return combat.player.cash; },
 };
 
@@ -672,7 +672,39 @@ function titleCamera() {
 // ---------------------------------------------------------------------------
 // Game update
 // ---------------------------------------------------------------------------
+/** A car that clips a hydrant shears it off; the stump throws a geyser for a while. */
+function updateHydrants(dt) {
+  const car = currentVehicle;
+  for (const h of world.hydrants) {
+    if (!h.broken && car && Math.abs(car.speed) > 4) {
+      const dx = h.x - car.x, dz = h.z - car.z;
+      const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+      const along = dx * fx + dz * fz, side = dx * fz - dz * fx;
+      if (Math.abs(along) < car.spec.length / 2 + 0.25 && Math.abs(side) < car.spec.width / 2 + 0.25) {
+        h.broken = true;
+        h.spray = 14;
+        car.speed *= 0.9;
+        if (audio.ready) audio.playCrash(0.35);
+        if (audio.ready) audio.playSplash();
+      }
+    }
+    if (h.broken && h.spray > 0) {
+      h.spray -= dt;
+      const k = Math.min(1, h.spray / 3);
+      for (let i = 0; i < 2; i += 1) {
+        combat.particles.push({
+          x: h.x + (Math.random() - 0.5) * 0.2, y: world.groundHeight(h.x, h.z) + 0.3, z: h.z + (Math.random() - 0.5) * 0.2,
+          vx: (Math.random() - 0.5) * 2.4, vy: (5 + Math.random() * 2.5) * k, vz: (Math.random() - 0.5) * 2.4,
+          life: 1.0, maxLife: 1.0, color: [0.72, 0.88, 1.0], size: 0.32, gravity: 9.5,
+        });
+      }
+    }
+  }
+}
+
 function updateGame(dt) {
+  tickTyreFx(dt);
+  updateHydrants(dt);
   game.playTime += dt;
   playTime += dt;
   game.hour = (game.hour + dt * 0.0085) % 24;
@@ -1117,6 +1149,7 @@ window.__solaris = {
   debug: {
     missions, combat, police, traffic, world,
     get input() { return { mouseDown, aimDown, keys: [...keys], pressed: [...pressedKeys] }; },
+    get fx() { return { skids: skidMarks.length, smoke: tyreSmoke.length }; },
   },
   renderer,
 };
