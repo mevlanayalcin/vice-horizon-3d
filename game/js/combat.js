@@ -29,103 +29,145 @@ export function characterColors(seed = 0.5, style = 'civ') {
 }
 
 /**
- * Shared low-poly humanoid. `c` = {x,z,y,heading,phase,speed,colors,aiming,weapon,
- * panic,dead,style,scale}. Limbs are beams so the walk, aim and panic poses read clearly.
+ * Shared stylised humanoid, sculpted from smooth parts: tapered tube limbs with knees and
+ * elbows, a lofted torso (hips, waist, chest, shoulders), a rounded head with hair, caps
+ * or shades, and shoes. `c` = {x,z,y,heading,phase,speed,colors,aiming,weapon,panic,dead,
+ * style,scale,lod}. The walk, aim and panic poses move the joints, not whole boxes.
  */
 export function buildCharacter(b, c, time = 0) {
   const heading = c.heading ?? 0;
   const cos = Math.cos(heading), sin = Math.sin(heading);
-  const W = (lx, ly, lz) => [c.x + lx * cos + lz * sin, (c.y ?? 0) + ly, c.z - lx * sin + lz * cos];
-  const yaw = -heading;
+  const baseY = c.y ?? 0;
+  const W = (lx, ly, lz) => [c.x + lx * cos + lz * sin, baseY + ly, c.z - lx * sin + lz * cos];
+  const yaw = heading;
   const colors = c.colors ?? characterColors(0.4, c.style ?? 'civ');
-  const scale = c.scale ?? 1;
+  const k = c.scale ?? 1;
+  const lod = c.lod ?? 0;
+  const sides = lod ? 4 : 6;
   const walk = c.phase ?? 0;
   const speed = c.speed ?? 0;
   const swing = clamp(speed / 3, 0, 1);
   const bob = Math.sin(walk * 2) * 0.035 * swing;
   const step = Math.sin(walk) * 0.42 * swing;
   const step2 = Math.sin(walk + Math.PI) * 0.42 * swing;
-  const dead = c.dead;
-  if (dead) {
+  const shoe = rgb(0x2c2f36);
+  if (c.dead) {
     // A still, dark silhouette flat on the ground.
-    b.box(c.x, 0.16, c.z, 1.4, 0.3, 0.55, shade(colors.shirt, 0.55), { rotY: yaw, omitBottom: true });
-    b.sphere(c.x + 0.7 * cos, 0.18, c.z - 0.7 * sin, 0.2, colors.skin, { segments: 6, rings: 4 });
+    const body = W(0, 0.14, 0.05);
+    b.ellipsoid(body[0], body[1], body[2], 0.24 * k, 0.12 * k, 0.62 * k, shade(colors.shirt, 0.55), { yaw, segments: 8, rings: 4 });
+    const head = W(0, 0.13, 0.78 * k);
+    b.ellipsoid(head[0], head[1], head[2], 0.12 * k, 0.11 * k, 0.13 * k, colors.skin, { yaw, segments: 7, rings: 4 });
     return;
   }
-  const hipY = 0.92 * scale + bob;
-  const torsoY = 1.28 * scale + bob;
-  const headY = 1.72 * scale + bob;
+  const hipY = 0.94 * k + bob;
+  const headY = 1.72 * k + bob;
 
-  // Legs (two beams from hip to foot, with shoes).
-  const hipW = 0.13 * scale;
-  const leftFoot = W(-hipW, 0.08 * scale, step);
-  const leftKnee = W(-hipW, 0.44 * scale, step * 0.4);
-  const rightFoot = W(hipW, 0.08 * scale, step2);
-  const rightKnee = W(hipW, 0.44 * scale, step2 * 0.4);
-  b.segment(W(-hipW, hipY, 0), leftKnee, 0.19 * scale, 0.19 * scale, colors.pants, {});
-  b.segment(leftKnee, leftFoot, 0.17 * scale, 0.17 * scale, colors.pants, {});
-  b.segment(W(hipW, hipY, 0), rightKnee, 0.19 * scale, 0.19 * scale, colors.pants, {});
-  b.segment(rightKnee, rightFoot, 0.17 * scale, 0.17 * scale, colors.pants, {});
-  b.box(leftFoot[0], leftFoot[1] + 0.02, leftFoot[2], 0.22 * scale, 0.12 * scale, 0.34 * scale, rgb(0x35383f), { rotY: yaw, omitBottom: true });
-  b.box(rightFoot[0], rightFoot[1] + 0.02, rightFoot[2], 0.22 * scale, 0.12 * scale, 0.34 * scale, rgb(0x35383f), { rotY: yaw, omitBottom: true });
-
-  // Torso, jacket and a belt.
-  b.box(c.x, torsoY, c.z, 0.5 * scale, 0.62 * scale, 0.3 * scale, colors.shirt, { rotY: yaw, omitBottom: true });
-  b.box(c.x, torsoY - 0.28 * scale, c.z, 0.46 * scale, 0.08 * scale, 0.32 * scale, shade(colors.pants, 0.8), { rotY: yaw, omitBottom: true });
-  b.box(W(0, 0, 0.16)[0], torsoY + 0.08, W(0, 0, 0.16)[2], 0.1 * scale, 0.5 * scale, 0.03 * scale, shade(colors.shirt, 0.7), { rotY: yaw, omitBottom: true });
-  if (c.style === 'cop') {
-    b.box(c.x, torsoY + 0.12, c.z, 0.52 * scale, 0.1 * scale, 0.32 * scale, rgb(0x101317), { rotY: yaw, omitBottom: true });
-    b.box(W(0.18, 0, 0.17)[0], torsoY + 0.18, W(0.18, 0, 0.17)[2], 0.12 * scale, 0.12 * scale, 0.03 * scale, colors.accent, { rotY: yaw, omitBottom: true, e: 0.3 });
+  // Legs: hip, knee and ankle joints with a forward knee bend in stride.
+  for (const [side, st] of [[-1, step], [1, step2]]) {
+    const hip = W(side * 0.095 * k, hipY, 0);
+    const knee = W(side * 0.1 * k, 0.5 * k, st * 0.45 + 0.04 * k);
+    const ankle = W(side * 0.1 * k, 0.1 * k, st);
+    b.tube([hip, knee, ankle], [0.088 * k, 0.07 * k, 0.052 * k], sides, colors.pants);
+    const foot = W(side * 0.1 * k, 0.055 * k, st + 0.05 * k);
+    b.ellipsoid(foot[0], foot[1], foot[2], 0.062 * k, 0.05 * k, 0.13 * k, shoe, { yaw, segments: 6, rings: 3 });
   }
 
-  // Head, hair, face hint.
-  b.sphere(c.x, headY, c.z, 0.19 * scale, colors.skin, { segments: 8, rings: 6 });
-  b.box(c.x, headY + 0.12 * scale, c.z - 0.03 * scale, 0.34 * scale, 0.14 * scale, 0.32 * scale, colors.hair, { rotY: yaw, omitBottom: true });
+  // Torso: hips, belt, waist, chest and shoulders lofted into one smooth body.
+  const torsoRows = [
+    [hipY - 0.05, 0.165, 0.11],
+    [hipY + 0.05, 0.16, 0.106],
+    [hipY + 0.1, 0.152, 0.102],
+    [hipY + 0.36, 0.182, 0.118],
+    [hipY + 0.5, 0.19, 0.1],
+    [hipY + 0.6, 0.07, 0.06],
+  ];
+  const torsoCells = [colors.pants, shade(colors.pants, 0.55), colors.shirt, colors.shirt, colors.shirt];
+  const ringN = lod ? 6 : 10;
+  const rows = [], axis = [];
+  for (const [y, rx, rz] of torsoRows) {
+    const ring = [];
+    for (let i = 0; i < ringN; i += 1) {
+      const a = (i / ringN) * Math.PI * 2;
+      ring.push(W(Math.cos(a) * rx * k, y, Math.sin(a) * rz * k));
+    }
+    rows.push(ring);
+    axis.push(W(0, y, 0));
+  }
+  b.surface(rows, { wrap: true, axis, colorAt: (i) => torsoCells[i] });
+  if (c.style === 'cop') {
+    const badge = W(0.09 * k, hipY + 0.42, 0.12 * k);
+    b.ellipsoid(badge[0], badge[1], badge[2], 0.035, 0.035, 0.012, colors.accent, { yaw, segments: 5, rings: 3, e: 0.4 });
+  } else if (c.style !== 'goon') {
+    // An open overshirt collar in the accent colour.
+    const collar = W(0, hipY + 0.55, 0.05 * k);
+    b.ellipsoid(collar[0], collar[1], collar[2], 0.11 * k, 0.04 * k, 0.07 * k, colors.accent, { yaw, segments: 6, rings: 3 });
+  }
+
+  // Neck and head.
+  const neck = W(0, hipY + 0.58, 0);
+  const chin = W(0, headY - 0.1 * k, 0.01);
+  b.tube([neck, chin], [0.05 * k, 0.048 * k], sides, colors.skin);
+  const head = W(0, headY, 0.01 * k);
+  b.ellipsoid(head[0], head[1], head[2], 0.112 * k, 0.138 * k, 0.122 * k, colors.skin, { yaw, segments: lod ? 6 : 10, rings: lod ? 4 : 7 });
+  const hair = W(0, headY + 0.028 * k, -0.012 * k);
+  b.ellipsoid(hair[0], hair[1], hair[2], 0.122 * k, 0.13 * k, 0.135 * k, colors.hair, { yaw, segments: lod ? 6 : 10, rings: 4, top: 0.52 });
   if (c.longHair) {
-    b.box(c.x, headY - 0.06 * scale, c.z - 0.15 * scale, 0.28 * scale, 0.3 * scale, 0.12 * scale, colors.hair, { rotY: yaw, omitBottom: true });
+    const back = W(0, headY - 0.07 * k, -0.07 * k);
+    b.ellipsoid(back[0], back[1], back[2], 0.11 * k, 0.17 * k, 0.07 * k, colors.hair, { yaw, segments: 7, rings: 4 });
   }
-  // Cap for cops.
+  if (c.style === 'player' || c.style === 'goon') {
+    const shades = W(0, headY + 0.012 * k, 0.122 * k);
+    b.ellipsoid(shades[0], shades[1], shades[2], 0.1 * k, 0.03 * k, 0.025 * k, rgb(0x0d0f14), { yaw, segments: 6, rings: 3, s: -0.95 });
+  }
   if (c.style === 'cop') {
-    b.box(c.x, headY + 0.18 * scale, c.z, 0.34 * scale, 0.1 * scale, 0.34 * scale, rgb(0x1a2230), { rotY: yaw, omitBottom: true });
-    b.box(c.x, headY + 0.12 * scale, c.z + 0.18 * scale, 0.26 * scale, 0.04 * scale, 0.12 * scale, rgb(0x101317), { rotY: yaw, omitBottom: true });
+    const cap = W(0, headY + 0.06 * k, 0);
+    b.ellipsoid(cap[0], cap[1], cap[2], 0.13 * k, 0.1 * k, 0.14 * k, rgb(0x1a2230), { yaw, segments: 8, rings: 4, top: 0.55 });
+    const brim = W(0, headY + 0.06 * k, 0.13 * k);
+    b.ellipsoid(brim[0], brim[1], brim[2], 0.11 * k, 0.018 * k, 0.07 * k, rgb(0x101317), { yaw, segments: 6, rings: 3 });
   }
 
-  // Arms: panic up, aiming forward, or swinging with the walk.
-  const shoulderL = W(-0.32 * scale, torsoY + 0.18, 0);
-  const shoulderR = W(0.32 * scale, torsoY + 0.18, 0);
+  // Arms: panic up, aiming forward, or swinging with the walk. Short sleeves, bare forearms.
+  const sleeveRow = (color) => (i) => (i === 0 ? color : c.style === 'cop' ? color : colors.skin);
+  const arm = (shoulder, elbow, hand) => {
+    b.tube([shoulder, elbow, hand], [0.062 * k, 0.05 * k, 0.04 * k], sides, colors.shirt, { colorAt: sleeveRow(colors.shirt) });
+    b.ellipsoid(hand[0], hand[1], hand[2], 0.048 * k, 0.055 * k, 0.05 * k, colors.skin, { yaw, segments: 6, rings: 3 });
+  };
+  const shoulderY = hipY + 0.5;
+  const shoulderL = W(-0.205 * k, shoulderY, 0);
+  const shoulderR = W(0.205 * k, shoulderY, 0);
   const weapon = c.weapon ?? null;
   if (c.panic) {
-    b.segment(shoulderL, W(-0.55 * scale, torsoY + 0.65, 0.05), 0.14 * scale, 0.14 * scale, colors.shirt, {});
-    b.segment(shoulderR, W(0.55 * scale, torsoY + 0.65, 0.05), 0.14 * scale, 0.14 * scale, colors.shirt, {});
-    b.sphere(W(-0.6 * scale, torsoY + 0.7, 0.05)[0], torsoY + 0.7, W(-0.6 * scale, 0, 0.05)[2], 0.1, colors.skin, { segments: 5, rings: 4 });
-    b.sphere(W(0.6 * scale, torsoY + 0.7, 0.05)[0], torsoY + 0.7, W(0.6 * scale, 0, 0.05)[2], 0.1, colors.skin, { segments: 5, rings: 4 });
+    arm(shoulderL, W(-0.34 * k, shoulderY + 0.2, 0.05), W(-0.36 * k, shoulderY + 0.46, 0.08));
+    arm(shoulderR, W(0.34 * k, shoulderY + 0.2, 0.05), W(0.36 * k, shoulderY + 0.46, 0.08));
   } else if (c.aiming || weapon) {
     const aim = c.aimYaw ?? heading;
-    // Right arm across the body toward the aim direction.
-    const handLocal = [0.18 * Math.cos(aim - heading) + 0.62 * Math.sin(aim - heading), torsoY + 0.02, 0.18 * -Math.sin(aim - heading) + 0.62 * Math.cos(aim - heading)];
-    const hand = W(handLocal[0], handLocal[1], handLocal[2]);
-    b.segment(shoulderR, hand, 0.13 * scale, 0.13 * scale, colors.shirt, {});
-    b.sphere(hand[0], hand[1], hand[2], 0.09, colors.skin, { segments: 5, rings: 4 });
-    b.segment(shoulderL, W(-0.24 * scale, torsoY - 0.05, 0.28), 0.13 * scale, 0.13 * scale, colors.shirt, {});
-    b.sphere(W(-0.24 * scale, torsoY - 0.1, 0.3)[0], torsoY - 0.1, W(-0.24 * scale, 0, 0.3)[2], 0.09, colors.skin, { segments: 5, rings: 4 });
+    const rel = aim - heading;
+    const local = (lx, lz) => [lx * Math.cos(rel) + lz * Math.sin(rel), -lx * Math.sin(rel) + lz * Math.cos(rel)];
+    const [hx, hz] = local(0.04, 0.6 * k);
+    const [ex, ez] = local(0.2 * k, 0.3 * k);
+    const handY = shoulderY - 0.06;
+    arm(shoulderR, W(ex, shoulderY - 0.1, ez), W(hx, handY, hz));
+    const [sx, sz] = local(-0.06, 0.48 * k);
+    const [lx, lz] = local(-0.16 * k, 0.24 * k);
+    arm(shoulderL, W(lx, shoulderY - 0.16, lz), W(sx, handY - 0.03, sz));
     if (weapon) {
       // Original low-poly hardware: dark receiver, coloured energy cell.
       const gunLength = weapon === 'shotgun' ? 0.95 : weapon === 'smg' ? 0.62 : 0.42;
       const gunYaw = -aim;
-      const gx = c.x + Math.sin(aim) * 0.55, gz = c.z + Math.cos(aim) * 0.55;
-      b.box(gx, torsoY + 0.02, gz, 0.1, 0.13, gunLength, rgb(0x23262c), { rotY: gunYaw, omitBottom: true });
-      b.box(gx, torsoY - 0.01, gz, 0.055, 0.06, gunLength * 0.8, rgb(0x8f979e), { rotY: gunYaw, omitBottom: true });
-      b.box(gx + Math.sin(aim) * gunLength * 0.45, torsoY + 0.02, gz + Math.cos(aim) * gunLength * 0.45, 0.07, 0.07, 0.08, rgb(0x3a3e46), { rotY: gunYaw, omitBottom: true });
+      const [gx0, gz0] = local(0.02, 0.62 * k);
+      const g = W(gx0, handY + 0.04, gz0);
+      const fx = Math.sin(aim), fz = Math.cos(aim);
+      b.box(g[0], g[1], g[2], 0.08, 0.12, gunLength, rgb(0x23262c), { rotY: gunYaw, omitBottom: true, s: -0.5 });
+      b.box(g[0], g[1] - 0.03, g[2], 0.05, 0.05, gunLength * 0.8, rgb(0x8f979e), { rotY: gunYaw, omitBottom: true, s: -0.7 });
+      b.box(g[0] + fx * gunLength * 0.45, g[1], g[2] + fz * gunLength * 0.45, 0.06, 0.06, 0.08, rgb(0x3a3e46), { rotY: gunYaw, omitBottom: true });
       if (weapon === 'smg') {
-        b.box(gx, torsoY + 0.14, gz, 0.04, 0.1, 0.1, PALETTE.neonCyan, { rotY: gunYaw, e: 0.5, omitBottom: true });
+        b.box(g[0], g[1] + 0.1, g[2], 0.035, 0.08, 0.1, PALETTE.neonCyan, { rotY: gunYaw, e: 0.6, omitBottom: true });
       }
     }
   } else {
     const armSwing = Math.sin(walk) * 0.35 * swing;
-    b.segment(shoulderL, W(-0.37 * scale, torsoY - 0.28, -armSwing * 0.5), 0.14 * scale, 0.14 * scale, colors.shirt, {});
-    b.segment(shoulderR, W(0.37 * scale, torsoY - 0.28, armSwing * 0.5), 0.14 * scale, 0.14 * scale, colors.shirt, {});
-    b.sphere(W(-0.38, 0, -armSwing * 0.5)[0], torsoY - 0.32, W(-0.38, 0, -armSwing * 0.5)[2], 0.09, colors.skin, { segments: 5, rings: 4 });
-    b.sphere(W(0.38, 0, armSwing * 0.5)[0], torsoY - 0.32, W(0.38, 0, armSwing * 0.5)[2], 0.09, colors.skin, { segments: 5, rings: 4 });
+    arm(shoulderL, W(-0.24 * k, shoulderY - 0.27, -armSwing * 0.35), W(-0.25 * k, shoulderY - 0.53, -armSwing * 0.7 + 0.05));
+    arm(shoulderR, W(0.24 * k, shoulderY - 0.27, armSwing * 0.35), W(0.25 * k, shoulderY - 0.53, armSwing * 0.7 + 0.05));
   }
 }
 
@@ -661,6 +703,7 @@ export function createCombat(world, bus) {
     }
     // Blood/spark particles as tiny glowing tetra-ish boxes.
     for (const p of particles) {
+      if (p.smoke) continue; // tyre smoke is drawn as soft halos only
       if (p.color[0] > 0.6 && p.color[1] < 0.4) {
         b.box(p.x, p.y, p.z, p.size * 0.2, p.size * 0.2, p.size * 0.2, p.color, { e: 1, omitBottom: true });
       } else {
@@ -680,7 +723,9 @@ export function createCombat(world, bus) {
       add(t.x1, t.y1, t.z1, t.color, 0.34 * life + 0.12, life * 0.8);
     }
     for (const p of particles) {
-      add(p.x, p.y, p.z, p.color, p.size * 0.8, clamp(p.life / p.maxLife, 0, 1) * 0.6);
+      const life = clamp(p.life / p.maxLife, 0, 1);
+      if (p.smoke) add(p.x, p.y, p.z, p.color, p.size * 1.9, life * 0.22);
+      else add(p.x, p.y, p.z, p.color, p.size * 0.8, life * 0.6);
     }
     for (const e of enemies) {
       if (!e.alive && e.deathTimer > 1.4) continue;

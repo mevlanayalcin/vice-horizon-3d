@@ -1,6 +1,6 @@
 [
-  { "name": "1-start.jpg", "query": "?shot=start", "caption": "Golden hour on the Palm Strip: the Solaris GT on the palm-lined coastal boulevard past lit Art Deco hotels, with the pier wheel over the turquoise bay and the full live HUD." },
-  { "name": "2-chase.jpg", "query": "?shot=chase", "caption": "Four-star twilight pursuit: cruisers boxing in the supercar, red and blue siren pools on the wet boulevard, a searchlight helicopter and a roadblock ahead, stars and speedo lit." },
-  { "name": "3-action.jpg", "query": "?shot=combat", "caption": "On foot at Coral Pier: over-the-shoulder SMG firefight with muzzle flash, tracers and hit sparks, the mission objective on the HUD, health and armour, and a police cruiser rolling in." },
-  { "name": "4-night.jpg", "query": "?shot=night", "caption": "Midnight over Neon Midtown and the Palm Strip: the hero car's lights on the wet boulevard, blazing lit towers and neon hotels, the Ferris wheel turning over the bay, and the city-progress badge." }
+  {"name": "1-start.jpg", "query": "?shot=start", "caption": "Golden hour on the Palm Strip: chase-cam behind the sculpted Solaris GT, the low sun glowing through the palms over wet asphalt, Art Deco hotels with corner drums and neon on the right, the pier wheel over the bay, and the full live HUD."},
+  {"name": "2-chase.jpg", "query": "?shot=chase", "caption": "Four-star sunset pursuit: two interceptors on the supercar's bumper, the police helicopter's searchlight cone pinning it, a V roadblock ahead, siren light on the wet boulevard, tyre smoke and the wanted stars."},
+  {"name": "3-action.jpg", "query": "?shot=combat", "caption": "Mission 04 on Coral Pier: over-the-shoulder SMG firefight under the neon Ferris wheel, tracers, muzzle flash and hit sparks, the gang behind crates and drums, panicking bystanders, and the mission objective on the HUD."},
+  {"name": "4-night.jpg", "query": "?shot=night", "caption": "Midnight on the Strip: the cyan supercar on rain-slicked asphalt mirroring the neon hotels, palms and skyline under a starry violet sky, with the mission card, minimap and city-progress badge."}
 ]

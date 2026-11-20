@@ -1,7 +1,9 @@
 // police.js — a proper five-star heat system. Crimes raise the level, cruisers spawn
 // off-screen and pursue with siren and flashing bars, officers deploy on foot, and at
-// four stars the force sets a roadblock. Break line of sight far enough for long
-// enough and the stars cool down one by one. All original "Solaris Bay PD" imagery.
+// four stars the force sets a roadblock. From three stars an air unit joins the chase:
+// a helicopter that shadows the player and pins them in its searchlight. Break line of
+// sight far enough for long enough and the stars cool down one by one. All original
+// "Solaris Bay PD" imagery.
 
 import { CITY, PALETTE, clamp, createRandom, rgb } from './config.js';
 import { createVehicle, updateVehicle, vehicleForward } from './vehicles.js';
@@ -21,6 +23,7 @@ export function createPolice(world, combat, bus) {
   let lastRaise = -10;
   let officersDeployed = new Set();
   let peak = 0;
+  let helicopter = null;
 
   function raise(amount = 1, reason = '') {
     if (amount <= 0) return;
@@ -57,6 +60,48 @@ export function createPolice(world, combat, bus) {
     for (const car of roadblockCars) removeCruiser(car);
     roadblockCars.length = 0;
     officersDeployed.clear();
+    helicopter = null;
+  }
+
+  /**
+   * The air unit: arrives at three stars, circles just ahead of the player at rooftop
+   * height, sweeps its searchlight onto them, and peels away once the heat drops.
+   */
+  function updateHelicopter(dt, player) {
+    if (wanted >= 3) {
+      if (!helicopter) {
+        helicopter = { x: player.x + 120, z: player.z - 90, y: 30, heading: 0, spotX: player.x, spotZ: player.z, leaving: false };
+        bus.onHelicopter?.(helicopter);
+      }
+      helicopter.leaving = false;
+      const orbit = time * 0.35;
+      const hx = player.x + Math.cos(orbit) * 26, hz = player.z + Math.sin(orbit) * 26;
+      const dx = hx - helicopter.x, dz = hz - helicopter.z;
+      const dist = Math.hypot(dx, dz);
+      const step = Math.min(dist, 34 * dt);
+      if (dist > 0.01) {
+        helicopter.x += (dx / dist) * step;
+        helicopter.z += (dz / dist) * step;
+        helicopter.heading = Math.atan2(dx, dz);
+      }
+      helicopter.y += (22 + Math.sin(time * 0.8) * 1.5 - helicopter.y) * Math.min(1, dt * 0.8);
+      // The searchlight lags the target a little, so a fast car can slip out of it.
+      const k = Math.min(1, dt * 2.2);
+      helicopter.spotX += (player.x - helicopter.spotX) * k;
+      helicopter.spotZ += (player.z - helicopter.spotZ) * k;
+    } else if (helicopter) {
+      helicopter.leaving = true;
+      helicopter.y += dt * 6;
+      helicopter.x += Math.sin(helicopter.heading) * 30 * dt;
+      helicopter.z += Math.cos(helicopter.heading) * 30 * dt;
+      if (helicopter.y > 90) helicopter = null;
+    }
+  }
+
+  /** Park the air unit at a fixed hover for staged frames. */
+  function stageHelicopter(h) {
+    helicopter = { leaving: false, ...h };
+    return helicopter;
   }
 
   function removeCruiser(car) {
@@ -127,6 +172,7 @@ export function createPolice(world, combat, bus) {
 
   function update(dt, player, playerVehicle) {
     time += dt;
+    updateHelicopter(dt, player);
     if (player.dead) {
       // The city loses interest while the player is down.
       heatTimer += dt;
@@ -315,6 +361,8 @@ export function createPolice(world, combat, bus) {
     setPeak,
     spawnCruiser,
     spawnStagedCruiser,
+    stageHelicopter,
+    get helicopter() { return helicopter; },
     get wanted() { return wanted; },
     get evasion() { return evasion; },
     get nearestSiren() { return 0; },

@@ -56,7 +56,7 @@ export const MISSIONS = [
       { type: 'goto', pos: [-166, 348], radius: 11, label: 'Meet Mateo at Coral Pier' },
       {
         type: 'kill', pos: [-166, 380], radius: 40, label: 'Clear the Coral Pier gang', count: 5,
-        spawn: [[-172, 350], [-158, 370], [-172, 398], [-158, 414], [-166, 382]], health: 80, raise: 0,
+        spawn: [[-172, 350], [-158, 370], [-172, 398], [-157, 405], [-166, 382]], health: 80, raise: 0,
       },
       { type: 'collect', pos: [-166, 420], radius: 26, crates: [[-166, 421]], label: 'Grab the briefcase at the end of the pier' },
     ],

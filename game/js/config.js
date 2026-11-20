@@ -126,14 +126,14 @@ export const SKY_PRESETS = {
     name: 'Golden Hour', clock: '18:55',
     sunDir: [-0.72, 0.28, 0.34],
     sunColor: rgb(0xffb56a), skyTop: rgb(0x241d5e), skyHorizon: rgb(0xff8f52),
-    fogColor: rgb(0xe89a72), fogDensity: 0.0016, ambientSky: rgb(0x9a7ab8), ambientGround: rgb(0x6c4b3b),
+    fogColor: rgb(0xe89a72), fogDensity: 0.00118, ambientSky: rgb(0x9a7ab8), ambientGround: rgb(0x6c4b3b),
     sunGlow: rgb(0xffb169), cityGlow: rgb(0xff9a5c), night: 0.22, stars: 0.0, sunSize: 0.9992, exposure: 1.02,
   },
   sunset: {
     name: 'Sunset', clock: '19:35',
     sunDir: [-0.94, 0.11, 0.24],
     sunColor: rgb(0xff7a45), skyTop: rgb(0x2c2a62), skyHorizon: rgb(0xff8a58),
-    fogColor: rgb(0xd97c72), fogDensity: 0.0021, ambientSky: rgb(0x79619c), ambientGround: rgb(0x5a3c37),
+    fogColor: rgb(0xd97c72), fogDensity: 0.0015, ambientSky: rgb(0x79619c), ambientGround: rgb(0x5a3c37),
     sunGlow: rgb(0xff8352), cityGlow: rgb(0xff6f83), night: 0.42, stars: 0.15, sunSize: 0.9991, exposure: 1.05,
   },
   night: {

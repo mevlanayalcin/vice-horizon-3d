@@ -8,7 +8,7 @@
 import {
   CITY, DISTRICTS, PALETTE, SAFEHOUSE, createRandom, rgb, shade, mix3,
 } from './config.js';
-import { MeshBuilder } from './renderer3d.js';
+import { MeshBuilder } from './meshkit.js';
 
 const V = (x, y, z) => [x, y, z];
 
@@ -657,6 +657,7 @@ export function createWorld(renderer) {
     glow(x, 4.9, z + d / 2 + 1.6, neon, 7.5, 0.6);
     glow(x - width * 0.18, 5.4, z + d / 2 + 1.8, neon, 3.6, 0.45);
     glow(x, 3.4, z + d / 2 + 2.6, PALETTE.coral, 4.0, 0.3);
+    addDecoFeatures(b, x, z, width, d, height, color, neon);
     // Pool deck + palms at the front.
     b.flat(x, z + d / 2 + 5, width * 0.6, 6, 0.06, rgb(0x6f9c8f));
     addPalm(x - width * 0.32, z + d / 2 + 6, 1.2, 'hotel');
@@ -664,6 +665,48 @@ export function createWorld(renderer) {
     buildings.push({ x, z, w: width, d, h: height + 6, district: 'palm', style: BUILDING_STYLES.palm[0] });
     collider(x - width / 2, x + width / 2, z - d / 2, z + d / 2);
     glow(x, height + 6, z, neon, 8, 0.6);
+  }
+
+  /**
+   * Streamline Art Deco on a Strip hotel: rounded corner drums wrapped in eyebrow fins,
+   * a stepped ziggurat crown with a neon-tipped spire, and a tall pylon fin over the door.
+   */
+  function addDecoFeatures(b, x, z, width, d, height, color, neon) {
+    const cream = mix3(color, PALETTE.white, 0.62);
+    const drumR = Math.min(4.2, width * 0.12);
+    const drumH = height * 0.94;
+    for (const side of [-1, 1]) {
+      const cx = x + side * (width / 2 - drumR * 0.55), cz = z + d / 2 - drumR * 0.55;
+      b.tube([[cx, 0, cz], [cx, drumH * 0.5, cz], [cx, drumH, cz]], [drumR, drumR, drumR], 18, mix3(color, PALETTE.white, 0.22));
+      b.ellipsoid(cx, drumH, cz, drumR * 1.04, 0.5, drumR * 1.04, cream, { segments: 18, rings: 3, top: 0.5 });
+      for (let y = 4.2; y < drumH - 1; y += 3.55) {
+        b.tube([[cx, y, cz], [cx, y + 0.26, cz]], [drumR + 0.55, drumR + 0.55], 18, PALETTE.white);
+        b.tube([[cx, y + 0.9, cz], [cx, y + 2.3, cz]], [drumR + 0.04, drumR + 0.04], 18, shade(PALETTE.glass, 1.4), { e: 0.12, s: -1 });
+      }
+      b.tube([[cx, drumH - 1.2, cz], [cx, drumH - 0.8, cz]], [drumR + 0.12, drumR + 0.12], 18, neon, { e: 1 });
+      glow(cx, drumH - 1, cz + drumR, neon, 4.5, 0.4);
+    }
+    // Stepped crown over the central tower, ending in a fluted spire.
+    let y = height + 6;
+    let w = width * 0.3, dd = d * 0.5;
+    for (let i = 0; i < 3; i += 1) {
+      const h = 2.2 - i * 0.4;
+      b.box(x, y + h / 2, z, w, h, dd, i % 2 ? color : cream, { omitBottom: true });
+      b.box(x, y + h - 0.1, z + dd / 2 + 0.06, w * 0.96, 0.18, 0.1, neon, { e: 1 });
+      y += h;
+      w *= 0.72; dd *= 0.72;
+    }
+    b.tube([[x, y, z], [x, y + 5, z], [x, y + 9.5, z]], [0.75, 0.42, 0.02], 8, cream);
+    b.ellipsoid(x, y + 9.4, z, 0.35, 0.35, 0.35, neon, { segments: 6, rings: 4, e: 1 });
+    glow(x, y + 9.4, z, neon, 3.2, 0.8);
+    // Pylon fin: a tall slab over the entrance with neon edges, the hotel's name tower.
+    const finH = height * 0.5;
+    const fz = z + d / 2 + 0.9;
+    b.box(x + width * 0.24, height * 0.62, fz, 0.7, finH, 2.4, cream, { omitBottom: true });
+    for (const e of [-1, 1]) {
+      b.box(x + width * 0.24, height * 0.62, fz + e * 1.25, 0.3, finH * 0.96, 0.14, neon, { e: 1, omitBottom: true });
+    }
+    glow(x + width * 0.24, height * 0.7, fz + 1.4, neon, 5.5, 0.45);
   }
 
   function addWarehouse(x, z, w, d, color) {
@@ -827,50 +870,68 @@ export function createWorld(renderer) {
     const b = builder(kind === 'hill' ? 'hills' : 'palm');
     const h = (7 + rng() * 4.5) * scale;
     const lean = (rng() - 0.5) * 2.2 * scale;
-    const segs = 4;
-    const top = [];
-    let px = x, pz = z;
-    for (let i = 0; i < segs; i += 1) {
-      const t = (i + 1) / segs;
-      const nx = x + lean * t * t, nz = z + lean * 0.35 * t;
-      const y0 = baseY + (h * i) / segs, y1 = baseY + (h * (i + 1)) / segs;
-      b.segment([px, y0, pz], [nx, y1, nz], 0.42 * scale * (1 - t * 0.25), 0.42 * scale * (1 - t * 0.25), PALETTE.trunk, {});
-      px = nx; pz = nz;
-      top[0] = px; top[1] = y1; top[2] = pz;
+    // Palms the camera meets up close (boulevard, beach, hotels, pier) get full detail;
+    // backyard and side-street palms use a lighter build of the same silhouette.
+    const hero = kind !== 'hill' && kind !== 'street';
+    // A gently curved, tapered trunk with a flared root and banded bark rings.
+    const trunkPts = [], radii = [];
+    const segs = hero ? 8 : 5;
+    for (let i = 0; i <= segs; i += 1) {
+      const t = i / segs;
+      trunkPts.push([x + lean * t * t, baseY + h * t - 0.1, z + lean * 0.35 * t]);
+      radii.push(scale * (0.3 * (1 - t * 0.32) + 0.2 * Math.max(0, 1 - t * 7) ** 2));
     }
-    const crown = top;
+    const bark = PALETTE.trunk, barkDark = shade(PALETTE.trunk, 0.78);
+    b.tube(trunkPts, radii, hero ? 7 : 5, bark, { colorAt: (i) => (i % 2 ? barkDark : bark) });
+    const crown = trunkPts[segs];
+    if (hero) b.ellipsoid(crown[0], crown[1] + 0.05, crown[2], 0.42 * scale, 0.5 * scale, 0.42 * scale, shade(PALETTE.palm, 0.7), { segments: 6, rings: 3 });
     const fronds = 7 + Math.floor(rng() * 3);
     for (let i = 0; i < fronds; i += 1) {
       const angle = (i / fronds) * Math.PI * 2 + rng() * 0.3;
       const length = (4.4 + rng() * 2.2) * scale;
       const lift = 1.4 + rng() * 1.3;
-      const dx = Math.cos(angle), dz = Math.sin(angle);
-      const mid = [crown[0] + dx * length * 0.55, crown[1] + lift, crown[2] + dz * length * 0.55];
-      const end = [crown[0] + dx * length, crown[1] + lift * 0.25 - 1.4 * scale, crown[2] + dz * length];
-      const side = [-dz * 0.55 * scale, 0, dx * 0.55 * scale];
-      const c1 = i % 3 === 0 ? PALETTE.palmLight : PALETTE.palm;
-      const c2 = shade(c1, 0.75);
-      b.quad(
-        [crown[0] + side[0], crown[1] + 0.2, crown[2] + side[2]],
-        [crown[0] - side[0], crown[1] + 0.2, crown[2] - side[2]],
-        [mid[0] - side[0] * 0.8, mid[1], mid[2] - side[2] * 0.8],
-        [mid[0] + side[0] * 0.8, mid[1], mid[2] + side[2] * 0.8],
-        c1, { n: [0, 1, 0], s: 1 },
-      );
-      b.quad(
-        [mid[0] + side[0] * 0.8, mid[1], mid[2] + side[2] * 0.8],
-        [mid[0] - side[0] * 0.8, mid[1], mid[2] - side[2] * 0.8],
-        [end[0] - side[0] * 0.25, end[1], end[2] - side[2] * 0.25],
-        [end[0] + side[0] * 0.25, end[1], end[2] + side[2] * 0.25],
-        c2, { n: [0, 1, 0], s: 1 },
-      );
+      addFrond(b, crown, angle, length, lift, scale, i % 3 === 0 ? PALETTE.palmLight : PALETTE.palm, hero ? 7 : 4);
+    }
+    // A younger inner tier: shorter, more upright fronds filling the crown.
+    for (let i = 0; hero && i < 3; i += 1) {
+      const angle = ((i + 0.5) / 3) * Math.PI * 2 + h * 0.37;
+      addFrond(b, crown, angle, (2.6 + (i % 2) * 0.6) * scale, 2.4, scale * 0.8, PALETTE.palmLight, 5);
     }
     // Coconuts.
     for (let i = 0; i < 3; i += 1) {
-      b.sphere(crown[0] + (rng() - 0.5) * 0.8, crown[1] - 0.3, crown[2] + (rng() - 0.5) * 0.8, 0.24 * scale, rgb(0x5d4a2e), { segments: 5, rings: 3 });
+      const cx = crown[0] + (rng() - 0.5) * 0.8, cz = crown[2] + (rng() - 0.5) * 0.8;
+      if (hero) b.sphere(cx, crown[1] - 0.3, cz, 0.24 * scale, rgb(0x5d4a2e), { segments: 4, rings: 3 });
     }
     collider(x - 0.5 * scale, x + 0.5 * scale, z - 0.5 * scale, z + 0.5 * scale, 'palm');
     return crown;
+  }
+
+  /** One arching palm frond: a folded, serrated leaf that rises off the crown and droops. */
+  function addFrond(b, crown, angle, length, lift, scale, color, K = 7) {
+    const dx = Math.cos(angle), dz = Math.sin(angle);
+    const sx = -dz, sz = dx;
+    const rows = [];
+    const rise = lift * 1.7;
+    const fall = rise + 1.5 * scale + 0.4;
+    for (let k = 0; k <= K; k += 1) {
+      const t = k / K;
+      const d = length * t;
+      const y = crown[1] + 0.15 + rise * t - fall * t * t;
+      const w = 0.78 * scale * Math.sin(Math.PI * Math.min(1, t * 1.08)) ** 0.6 * (k % 2 ? 1 : 0.78);
+      const fold = w * 0.42;
+      const cx = crown[0] + dx * d, cz = crown[2] + dz * d;
+      rows.push([
+        [cx - sx * w, y - fold, cz - sz * w],
+        [cx, y + 0.04, cz],
+        [cx + sx * w, y - fold, cz + sz * w],
+      ]);
+    }
+    const tip = shade(color, 0.72);
+    b.surface(rows, {
+      s: 1,
+      flip: true,
+      colorAt: (i, j) => mix3(j ? color : shade(color, 0.88), tip, i / K),
+    });
   }
 
   function addPalmRow(x0, x1, z, gap, scale) {
@@ -1043,13 +1104,58 @@ export function createWorld(renderer) {
       collider(x - w / 2, x + w / 2, z - d / 2, z + d / 2, 'pier');
       addPalm(x + w / 2 + 2, z, 0.75, 'pier');
     }
+    addPierDressing(b, px);
     // Ferris wheel at the end.
     addFerrisWheel(px, 432);
     // Landmark signs.
     b.box(px + 18, 8.5, 338, 1.2, 1.2, 1.2, PALETTE.neonPink, { e: 1, omitBottom: true });
     glow(px + 18, 8.5, 338, PALETTE.neonPink, 5, 0.5);
     landmarks.push({ name: 'Coral Pier', x: px, z: 372 });
-    collider(px - 10, px + 10, 306, 446, 'pier');
+    // The deck is walkable: only the railings, the far end and the wheel's base block.
+    collider(px - 10.4, px - 9.2, 306, 446, 'pier');
+    collider(px + 9.2, px + 10.4, 306, 446, 'pier');
+    collider(px - 10, px + 10, 444.5, 446.5, 'pier');
+    collider(px - 9, px + 9, 430.8, 433.2, 'pier');
+  }
+
+  /**
+   * Pier dressing that doubles as cover: stacked cargo crates and banded oil drums
+   * (solid, with colliders), plus warm festoon bulbs strung along both railings.
+   */
+  function addPierDressing(b, px) {
+    const wood = rgb(0x9a6a3e), woodDark = rgb(0x6e4a2b);
+    const crate = (x, z, s, rot, y = 1.1) => {
+      b.box(x, y + s / 2, z, s, s, s, wood, { rotY: rot, omitBottom: true });
+      for (const t of [0.12, 0.88]) b.box(x, y + s * t, z, s * 1.02, s * 0.1, s * 1.02, woodDark, { rotY: rot, omitBottom: true });
+      b.box(x, y + s / 2, z, s * 1.02, s * 0.84, s * 0.1, woodDark, { rotY: rot + Math.PI / 4, omitBottom: true });
+    };
+    const drum = (x, z, color) => {
+      b.tube([[x, 1.1, z], [x, 1.55, z], [x, 2.0, z]], [0.42, 0.44, 0.42], 12, color, { colorAt: (i) => (i ? color : shade(color, 0.7)), s: -0.4 });
+      b.ellipsoid(x, 2.0, z, 0.42, 0.05, 0.42, shade(color, 0.8), { segments: 12, rings: 2, top: 0.5 });
+      b.tube([[x, 1.5, z], [x, 1.6, z]], [0.455, 0.455], 12, shade(color, 0.55));
+    };
+    for (const [x, z, s, rot] of [[px + 4.6, 376.5, 1.5, 0.2], [px + 6.1, 377.4, 1.2, -0.3], [px - 4.8, 371, 1.4, 0.5], [px - 2.6, 394.5, 1.4, -0.15], [px + 3, 398, 1.3, 0.35]]) {
+      crate(x, z, s, rot);
+      collider(x - s / 2, x + s / 2, z - s / 2, z + s / 2, 'cover');
+    }
+    crate(px + 4.9, 376.6, 1.0, 0.55, 2.6);
+    for (const [x, z, c] of [[px + 7.4, 380.2, rgb(0x2f8fbf)], [px + 6.6, 381.3, rgb(0xd6452f)], [px - 6.3, 373.4, rgb(0xe0a83c)], [px - 0.8, 396.4, rgb(0x2f8fbf)]]) {
+      drum(x, z, c);
+      collider(x - 0.45, x + 0.45, z - 0.45, z + 0.45, 'cover');
+    }
+    // Festoon bulbs swagged between the railing posts, warm against the sunset.
+    for (let z = 310; z < 440; z += 3.5) {
+      for (const dx of [-9.5, 9.5]) {
+        const sag = Math.sin(((z - 310) / 7) * Math.PI) * 0.35;
+        const y = 3.05 - Math.abs(sag);
+        const warm = Math.floor(z / 3.5) % 3 === 0 ? PALETTE.neonPink : rgb(0xffd98a);
+        b.sphere(px + dx, y, z, 0.13, warm, { segments: 5, rings: 3, e: 1 });
+        glow(px + dx, y, z, warm, 1.3, 0.42);
+      }
+    }
+    for (const dx of [-9.5, 9.5]) {
+      for (let z = 310; z < 440; z += 35) b.box(px + dx, 2.2, z, 0.14, 2.2, 0.14, rgb(0x5b442f), { omitBottom: true });
+    }
   }
 
   function addFerrisWheel(x, z) {
@@ -1061,12 +1167,12 @@ export function createWorld(renderer) {
       const a1 = ((i + 1) / spokes) * Math.PI * 2;
       const p0 = [x + Math.cos(a0) * r, cy + Math.sin(a0) * r, z];
       const p1 = [x + Math.cos(a1) * r, cy + Math.sin(a1) * r, z];
-      b.segment(p0, p1, 0.36, 0.36, i % 2 ? PALETTE.neonPink : PALETTE.neonCyan, { e: 1 });
+      void p1;
       b.segment([x, cy, z], p0, 0.12, 0.12, rgb(0xc7c1b6), {});
       // Inner ring gives the wheel depth and a second colour band.
       const q0 = [x + Math.cos(a0) * r * 0.62, cy + Math.sin(a0) * r * 0.62, z - 0.9];
       const q1 = [x + Math.cos(a1) * r * 0.62, cy + Math.sin(a1) * r * 0.62, z - 0.9];
-      b.segment(q0, q1, 0.22, 0.22, i % 2 ? PALETTE.neonAmber : PALETTE.neonMagenta, { e: 1 });
+      void q1;
       b.segment(p0, q0, 0.1, 0.1, rgb(0xd7d2c7), {});
       if (i % 2 === 0) {
         const cabinColor = choose([rgb(0xf6a24b), rgb(0xf26f8f), rgb(0x54c7c3), rgb(0xf4d06f)]);
@@ -1079,6 +1185,18 @@ export function createWorld(renderer) {
       const mid = (a0 + a1) / 2;
       b.sphere(x + Math.cos(mid) * r, cy + Math.sin(mid) * r, z + 0.3, 0.42, i % 2 ? rgb(0xfff0b0) : PALETTE.neonPink, { segments: 5, rings: 3, e: 1 });
     }
+    // Smooth neon rims: an outer pink/cyan ring and an inner amber/magenta ring.
+    const ring = (radius, dz, thick, colA, colB) => {
+      const path = [], radii = [];
+      for (let k = 0; k <= 72; k += 1) {
+        const a = (k / 72) * Math.PI * 2;
+        path.push([x + Math.cos(a) * radius, cy + Math.sin(a) * radius, z + dz]);
+        radii.push(thick);
+      }
+      b.tube(path, radii, 6, colA, { colorAt: (k) => (Math.floor(k / 6) % 2 ? colA : colB), e: 1 });
+    };
+    ring(r, 0, 0.24, PALETTE.neonPink, PALETTE.neonCyan);
+    ring(r * 0.62, -0.9, 0.15, PALETTE.neonAmber, PALETTE.neonMagenta);
     // Hub and support legs with cross bracing.
     b.cylinder(x, cy - 1.6, z, 1.5, 1.5, 3.2, 8, PALETTE.concreteDark, { capTop: true });
     b.box(x, cy, z, 3.4, 0.5, 0.5, PALETTE.neonMagenta, { e: 1, omitBottom: true });
@@ -1323,7 +1441,7 @@ export function createWorld(renderer) {
   for (const [key, b] of batches) {
     if (b.length === 0) continue;
     const geometry = b.geometry();
-    meshes.push({ key, mesh: renderer.createMesh(geometry), count: geometry.count });
+    meshes.push({ key, mesh: renderer.createMesh(geometry, key), count: geometry.count });
   }
 
   const map = {
