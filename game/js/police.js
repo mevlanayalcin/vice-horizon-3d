@@ -9,6 +9,11 @@
 // at a time; any unit spotting the suspect resets it. Cruisers are ordinary cars, built
 // and stepped by vehicles.js through `bus.buildCar` / `bus.driveCar`: this module only
 // steers them, routing round the blocks through the road grid's junctions.
+// Every unit carries a radio callsign (UNIT-12, TAC-04, AIR ONE) and getDispatchUnits()
+// reads the live roster for the HUD's SBPD RESPONSE table: each unit's current role
+// (SPOTLIGHT, PIT/RAM, FLANKING, ROADBLOCK, CLOSING IN, FOOT CHASE, SEARCHING ...) worked out
+// from what it is doing this frame, and its distance to the suspect. Elena's JAM DISPATCH
+// (crew.js) calls jam(): for a few seconds no unit beyond earshot can see the suspect.
 
 import { clamp, createRandom, lerp } from './config.js';
 
@@ -40,6 +45,9 @@ const CONE = 1.05; // half-angle of a unit's vision cone
 const CONTACT = 3.3; // centre distance at which two cars touch
 
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+// Radio callsigns, handed out in order so a staged frame always reads the same.
+const UNIT_CALLSIGNS = ['UNIT-12', 'UNIT-07', 'UNIT-21', 'UNIT-33', 'UNIT-18', 'UNIT-26', 'UNIT-05', 'UNIT-41'];
+const TAC_CALLSIGNS = ['TAC-04', 'TAC-09', 'TAC-11', 'TAC-15'];
 
 export function createPolice(world, combat, bus) {
   const random = createRandom(0x5b9d);
@@ -52,6 +60,9 @@ export function createPolice(world, combat, bus) {
   let spawnT = 0, losT = 0, blockT = 0, bumpT = 0, boxedT = 0;
   let nearestSiren = Infinity;
   let heliCalled = false;
+  let jamT = 0;
+  let unitCount = 0, tacCount = 0;
+  const nextUnit = () => UNIT_CALLSIGNS[unitCount++ % UNIT_CALLSIGNS.length];
 
   // Junctions of the road grid: the waypoints cruisers route through.
   const junctions = [];
@@ -118,7 +129,7 @@ export function createPolice(world, combat, bus) {
     const toward = Math.atan2(p.x - spot.x, p.z - spot.z);
     const along = spot.axis === 'x' ? Math.PI / 2 : 0;
     const heading = spot.heading ?? (spot.axis ? (Math.cos(along - toward) >= 0 ? along : along + Math.PI) : toward);
-    const car = makeCruiser(spot.x, spot.z, heading, { sirenOn: wanted > 0, pursuit: wanted > 0 });
+    const car = makeCruiser(spot.x, spot.z, heading, { sirenOn: wanted > 0, pursuit: wanted > 0, callsign: nextUnit() });
     cruisers.push(car);
     bus.onPoliceSpawned?.(car);
     return car;
@@ -126,7 +137,7 @@ export function createPolice(world, combat, bus) {
 
   /** Photo mode: a cruiser parked exactly where the stage wants it. */
   function spawnStagedCruiser(x, z, heading) {
-    const car = makeCruiser(x, z, heading, { staged: true });
+    const car = makeCruiser(x, z, heading, { staged: true, callsign: nextUnit() });
     cruisers.push(car);
     return car;
   }
@@ -162,7 +173,8 @@ export function createPolice(world, combat, bus) {
    */
   function makeRoadblock(x, z, heading, side, half, street, staged) {
     const at = (u, f) => [x + Math.cos(heading) * u + Math.sin(heading) * f, z - Math.sin(heading) * u + Math.cos(heading) * f];
-    const block = { x, z, heading, street, side, half, barriers: [], flares: [], cars: [], officers: [], age: 0, staged };
+    const block = { x, z, heading, street, side, half, barriers: [], flares: [], cars: [], officers: [], age: 0, staged,
+      callsign: TAC_CALLSIGNS[tacCount++ % TAC_CALLSIGNS.length] };
     for (const s of [-1, 1]) {
       const [cx, cz] = at(s * half * 0.5, 0);
       const car = makeCruiser(cx, cz, heading - s * side * 0.62, { sirenOn: true, roadblock: true, parked: true, staged });
@@ -320,14 +332,16 @@ export function createPolice(world, combat, bus) {
     dropOfficers(() => true);
     helicopter = null;
     wanted = 0; chasePeak = 0; evadeT = 0;
-    seen = false; heliCalled = false;
+    seen = false; heliCalled = false; jamT = 0;
+    unitCount = 0; tacCount = 0;
     nearestSiren = Infinity;
     bus.onSirenLevel?.(Infinity);
   }
 
   /** Does any unit see (tx, tz)? Cones and sight lines for cars and officers, the light for Air One. */
   function detect(tx, tz) {
-    const range = TIERS[wanted].range;
+    // While Elena jams the band only a unit within earshot still has the suspect.
+    const range = jamT > 0 ? HEAR : TIERS[wanted].range;
     const units = [...cruisers.filter((c) => !c.wrecked), ...roadblockCars, ...officers().filter((e) => e.alive)];
     for (const u of units) {
       const dx = tx - u.x, dz = tz - u.z;
@@ -335,8 +349,71 @@ export function createPolice(world, combat, bus) {
       if (d > range || (d > HEAR && Math.abs(wrap(Math.atan2(dx, dz) - u.heading)) > CONE)) continue;
       if (clearLine(u.x, u.z, tx, tz)) return true;
     }
+    return jamT <= 0 && airLock(tx, tz);
+  }
+
+  /** Air One's light is on the point (and nothing overhead hides it). */
+  function airLock(tx, tz) {
     const h = helicopter;
     return !!h && !h.leaving && Math.hypot(h.spotX - tx, h.spotZ - tz) < 11 && !world.insideBuilding(tx, tz);
+  }
+
+  /** Elena's JAM DISPATCH: units lose the suspect for `seconds` unless they are close. */
+  function jam(seconds = 8) {
+    if (wanted === 0) return false;
+    jamT = seconds;
+    seen = false;
+    losT = 0;
+    bus.dispatch?.('SBPD DISPATCH · SIGNAL LOST', 'All units, repeat last? Band is full of static. Air One, we have lost your feed.', 4200);
+    return true;
+  }
+
+  /** What one unit is doing right now, in dispatch words. */
+  function roleOf(car, d, t) {
+    if (car.wrecked) return 'DISABLED';
+    if (car.dismounted) return 'FOOT CHASE';
+    if (wanted === 0) return 'RESUMING PATROL';
+    if (!seen) return 'SEARCHING';
+    if (t.vehicle && d < 8) return 'PIT/RAM';
+    if (t.vehicle && (car.role === 1 || car.role === 2) && d < 24) return 'FLANKING';
+    if (t.vehicle && car.role === 3 && wanted >= 3 && d > 24) return 'INTERCEPT';
+    if (d < 60) return 'CLOSING IN';
+    return 'EN ROUTE';
+  }
+
+  /**
+   * The live SBPD roster for the HUD: Air One, every cruiser, each roadblock (one entry per
+   * barricade, its two cars and officers) and officers on foot, nearest first.
+   */
+  function getDispatchUnits() {
+    const p = combat.player;
+    const v = p.inVehicle;
+    const t = { x: v ? v.x : p.x, z: v ? v.z : p.z, vehicle: v };
+    const units = [];
+    const dist = (x, z) => Math.round(Math.hypot(x - t.x, z - t.z));
+    const h = helicopter;
+    if (h) {
+      const locked = !h.leaving && seen && airLock(t.x, t.z);
+      units.push({ callsign: 'AIR ONE', kind: 'air', role: h.leaving ? 'RETURNING' : locked ? 'SPOTLIGHT' : 'SEARCHING', distMeters: dist(h.x, h.z), active: !h.leaving });
+    }
+    for (const car of cruisers) {
+      const d = dist(car.x, car.z);
+      if (d > 320) continue;
+      units.push({ callsign: car.callsign ?? 'UNIT', kind: 'car', role: roleOf(car, d, t), distMeters: d, active: !car.wrecked && wanted > 0 });
+    }
+    for (const block of roadblocks) {
+      const d = dist(block.x, block.z);
+      if (d > 320) continue;
+      units.push({ callsign: block.callsign, kind: 'block', role: 'ROADBLOCK', distMeters: d, active: true, street: block.street });
+    }
+    for (const cop of officers()) {
+      if (cop.barricade || !cop.alive) continue;
+      const d = dist(cop.x, cop.z);
+      if (d > 160) continue;
+      units.push({ callsign: cop.callsign ?? `OFC-${String(30 + (cop.id ?? units.length) % 60).padStart(2, '0')}`, kind: 'foot', role: d < 20 ? 'CLOSING IN' : 'FOOT CHASE', distMeters: d, active: true });
+    }
+    units.sort((a, b) => a.distMeters - b.distMeters);
+    return units;
   }
 
   // ------------------------------------------------------------------ driving
@@ -449,6 +526,7 @@ export function createPolice(world, combat, bus) {
   function update(dt, player, vehicle) {
     time += dt;
     bumpT -= dt;
+    jamT = Math.max(0, jamT - dt);
     const src = vehicle ?? player;
     const t = { x: src.x, z: src.z, vx: src.velocityX ?? 0, vz: src.velocityZ ?? 0, heading: src.heading ?? 0, vehicle };
 
@@ -562,7 +640,17 @@ export function createPolice(world, combat, bus) {
   return {
     cruisers, roadblockCars, roadblocks, allCars, update, raise, setWanted, clear,
     setPeak: (n) => { peak = n; },
-    spawnCruiser, spawnStagedCruiser, stageHelicopter, stageRoadblock, spawnRoadblock,
+    spawnCruiser, spawnStagedCruiser, stageHelicopter, stageRoadblock, spawnRoadblock, getDispatchUnits, jam,
+    /** Photo mode: whether the units have eyes on the suspect in the staged frame. */
+    setSeen: (v) => { seen = !!v; },
+    /** A unit has eyes on the suspect this moment. */
+    get inSight() { return wanted > 0 && seen; },
+    /** Air One's searchlight is on the suspect. */
+    get airLocked() {
+      const p = combat.player, v = p.inVehicle;
+      return wanted > 0 && seen && airLock(v ? v.x : p.x, v ? v.z : p.z);
+    },
+    get jammed() { return jamT; },
     get chasePeak() { return chasePeak; },
     get helicopter() { return helicopter; },
     get wanted() { return wanted; },

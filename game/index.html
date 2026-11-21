@@ -4,132 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SOLARIS BAY — an original open-world crime saga</title>
-<meta name="description" content="SOLARIS BAY: an original sun-soaked coastal open world built in pure WebGL2. Drive, steal, fight and outrun a five-star police response across six districts.">
+<meta name="description" content="SOLARIS BAY: an original sun-soaked coastal open world built in pure WebGL2. Drive, steal, fight and outrun a five-star police response across seven districts.">
 <link rel="stylesheet" href="./styles.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b111b'/%3E%3Ccircle cx='16' cy='13' r='7' fill='%23ffb25a'/%3E%3Cpath d='M2 24h28v3H2z' fill='%2338c6c0'/%3E%3C/svg%3E">
 </head>
 <body>
-<!-- The live game: one WebGL2 canvas, the HUD and the title screen. The title's district
-list and key card, the city menu, field manual, pause, load and story screens are
-inserted by js/screens.js in their places. -->
+<!-- The live game: one WebGL2 canvas and the HUD layer. js/hud.js builds the HUD inside #hud
+(SBPD response table, mission card, wanted pill, weapon rail, crew ability cards, standing,
+vitals, minimap, speedometer, dialogue); js/screens.js inserts the title screen with its
+save cards, the city menu, settings, pause, load and story screens. -->
 <canvas id="game" role="img" aria-label="SOLARIS BAY, a sunlit coastal city rendered in 3D: boulevards, beach, neon towers, palm trees and the ocean"></canvas>
 <div id="damageFlash" aria-hidden="true"></div>
 <div id="speedLines" aria-hidden="true"></div>
 
-<div id="hud" class="hidden" aria-live="off">
-<div class="mission-card" id="missionCard">
-<div class="mission-top"><span class="mission-code" id="missionCode">MISSION 01</span><span class="mission-frac" id="missionFrac">1 / 5</span></div>
-<div class="mission-name" id="missionName">BOARDWALK BOOST</div>
-<div class="mission-objective"><span class="obj-diamond"></span><span id="objectiveText">Follow the gold marker</span></div>
-<div class="mission-meter"><span id="missionMeterFill"></span></div>
-</div>
-<div class="activity-chip hidden" id="activityChip">
-<span class="act-code" id="activityCode">RACE</span><span class="act-name" id="activityName">OCEAN BOULEVARD SPRINT</span>
-<span class="act-cp" id="activityCp">CP 1 / 6</span><span class="act-timer" id="activityTimer">0:48.0</span>
-</div>
-<div class="mission-banner" id="missionBanner">
-<span class="banner-kicker" id="bannerKicker">MISSION START</span>
-<span class="banner-title" id="bannerTitle">BOARDWALK BOOST</span>
-<span class="banner-sub" id="bannerSub">Palm Strip · Elena Vega</span>
-</div>
-
-<div class="hud-top-right">
-<div class="wanted-row" id="wantedRow" aria-label="Wanted level">
-<span class="wanted-label" id="wantedLabel">CLEAR</span>
-<span class="star" data-star="1">★</span><span class="star" data-star="2">★</span><span class="star" data-star="3">★</span><span class="star" data-star="4">★</span><span class="star" data-star="5">★</span>
-</div>
-<div class="cash-chip"><span class="cash-mark">$</span><span id="cashValue">000,640</span></div>
-<div class="rank-row"><span class="rank-name" id="rankName">BEACH RAT</span><div class="rank-bar"><span id="rankFill"></span></div><span class="rank-rp" id="respectValue">0 RP</span></div>
-<div class="weapon-panel">
-<div class="weapon-icon" id="weaponIcon"></div>
-<div class="weapon-meta">
-<div class="weapon-name" id="weaponName">PALM PISTOL</div>
-<div class="weapon-ammo"><span id="ammoMag">12</span><span class="ammo-sep">/</span><span id="ammoReserve">96</span><span class="ammo-hint" id="ammoHint">AUTO RELOAD</span></div>
-</div>
-<div class="weapon-slots" id="weaponSlots"><span data-slot="1">1</span><span data-slot="2">2</span><span data-slot="3">3</span><span data-slot="4">4</span></div>
-</div>
-</div>
-
-<div class="notification-stack" id="notifications"></div>
-<div class="dispatch-card" id="dispatchCard" aria-live="polite">
-<div class="dispatch-head"><span class="dispatch-led"></span><span id="dispatchTitle">SBPD DISPATCH · AIR ONE</span><span class="dispatch-freq">CH 7 · 460.15</span></div>
-<div class="dispatch-text" id="dispatchText">All units, Air One on station.</div>
-<div class="dispatch-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-</div>
-
-<div class="hud-bottom-left">
-<div class="crew-badge" id="crewBadge" aria-label="Crew status"></div>
-<div class="minimap-frame">
-<canvas id="minimap" width="560" height="372" aria-label="Live minimap"></canvas>
-<span class="compass-n">N</span>
-<span class="minimap-key">M · CITY MAP</span>
-</div>
-<div class="vitals">
-<div class="bar health-bar"><span id="healthFill"></span><em id="healthNum">100</em></div>
-<div class="bar armor-bar"><span id="armorFill"></span><em id="armorNum">0</em></div>
-</div>
-</div>
-
-<div class="hud-bottom-right">
-<div class="location-row">
-<div class="district-pill"><span class="district-dot"></span><span id="districtName">PALM STRIP</span></div>
-<div class="time-chip"><span id="clock">19:04</span><span class="time-divider"></span><span id="timeName">GOLDEN HOUR</span></div>
-</div>
-<div class="radio-chip"><span class="radio-wave"><i></i><i></i><i></i></span><span id="radioName">RADIO OFF</span><span class="key-pill">R</span></div>
-<div class="speedo hidden" id="speedo">
-<div class="speedo-top"><span class="gear" id="gearValue">D</span><span class="speed-label">SOLARIS GT</span></div>
-<div class="speed-main"><span id="speedValue">0</span><span class="speed-unit">KM/H</span></div>
-<div class="rpm-bar"><span id="rpmFill"></span></div>
-<div class="speedo-bottom"><span class="nitro-label">NITRO</span><div class="nitro-bar"><span id="nitroFill"></span></div><span class="drift-tag hidden" id="driftTag">DRIFT</span></div>
-</div>
-</div>
-
-<div class="dialogue-card" id="dialogueCard">
-<div class="dialogue-portrait" id="dialoguePortrait">E</div>
-<div class="dialogue-body"><div class="dialogue-speaker" id="dialogueSpeaker">ELENA VEGA</div><div class="dialogue-text" id="dialogueText"></div></div>
-</div>
-<div class="crosshair" id="crosshair">
-<span class="ch-dot"></span><span class="ch-line ch-t"></span><span class="ch-line ch-b"></span><span class="ch-line ch-l"></span><span class="ch-line ch-r"></span>
-<span class="hitmarker" id="hitmarker"></span>
-</div>
-<div class="interact-prompt" id="interactPrompt"><span class="key-pill">F</span><span id="interactText">Steal Marisol Coupe</span></div>
-<div class="cover-chip" id="coverChip"><span class="cover-shield"></span><span id="coverText">IN COVER · COASTAL MUSCLE</span><span class="cover-keys">Q / C LEAVE · RMB PEEK</span></div>
-<div class="controls-hint" id="controlsHint">WASD MOVE · SHIFT SPRINT · SPACE JUMP · E/F VEHICLE · 1-4 WEAPON · M MAP · R RADIO · ESC PAUSE</div>
-<div class="status-line" id="statusLine" role="status" aria-live="polite"></div>
-</div>
-
-<div id="titleScreen" class="screen">
-<div class="title-vignette"></div>
-<div class="title-inner">
-<div class="title-left">
-<div class="eyebrow"><span class="live-dot"></span> AN ORIGINAL OPEN-WORLD CRIME SAGA · WEBGL2</div>
-<div class="logo-block"><div class="logo-sun"></div><h1 class="logo"><span class="logo-solaris">SOLARIS</span><span class="logo-bay">BAY</span></h1></div>
-<p class="tagline">Sun, salt and <em>unfinished business.</em></p>
-<p class="premise">Elena and Mateo have eight jobs, five districts to win and no intention of leaving quietly. Drive the strip, hit the vault, outrun the heat.</p>
-<div class="menu">
-<button class="menu-btn primary" data-action="new"><span class="btn-index">01</span><span class="btn-label">NEW GAME</span><span class="btn-arrow">→</span></button>
-<button class="menu-btn" data-action="continue" id="continueBtn"><span class="btn-index">02</span><span class="btn-label">CONTINUE SAVE</span><span class="btn-meta" id="continueMeta">NO SAVE FOUND</span></button>
-<button class="menu-btn" data-action="loadMenu" id="loadMenuBtn"><span class="btn-index">03</span><span class="btn-label">LOAD GAME</span><span class="btn-meta" id="loadMenuMeta">3 SAVE SLOTS + AUTOSAVE</span></button>
-<button class="menu-btn" data-action="controls"><span class="btn-index">04</span><span class="btn-label">CONTROLS &amp; CITY</span><span class="btn-arrow">→</span></button>
-</div>
-<div class="title-stats">
-<div class="stat"><span class="stat-label">STORY</span><span class="stat-value" id="titleProgress">0 / 8</span></div>
-<div class="stat"><span class="stat-label">CASH</span><span class="stat-value gold" id="titleCash">$640</span></div>
-<div class="stat"><span class="stat-label">SUN TOKENS</span><span class="stat-value" id="titleTokens">0 / 12</span></div>
-<div class="stat"><span class="stat-label">PEAK HEAT</span><span class="stat-value" id="titlePeak">★ 0</span></div>
-</div>
-</div>
-<div class="title-right">
-<div class="right-head"><span>THE CITY</span><span class="right-line"></span><span>7 DISTRICTS</span></div>
-<div class="right-head second"><span>FIELD MANUAL</span><span class="right-line"></span><span>KEYBOARD</span></div>
-<div class="title-footer"><span>AN ORIGINAL CITY · NO COMMERCIAL ASSETS</span><span class="footer-sep"></span><span>PROCEDURAL AUDIO</span><span class="footer-sep"></span><span>100% OFFLINE</span></div>
-</div>
-</div>
-<div class="title-bottom">
-<span class="title-tip">TIP · Steal anything on four wheels. Lose the cops by breaking their line of sight.</span>
-<span class="title-build">SOLARIS BAY <b>v1.0</b> · GOLDEN HOUR BUILD</span>
-</div>
-</div>
+<div id="hud" class="hidden" aria-live="off"></div>
 
 <div id="loading" class="loading">
 <div class="loading-sun"></div>

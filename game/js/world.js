@@ -1,3 +1,4 @@
+// Solaris Bay v10 module: world (7-district Solaris Bay road & building map).
 // world.js — SOLARIS BAY itself. One deterministic procedural pass builds the whole
 // coastal metropolis: road grid and boulevards, five districts plus the hills, lit
 // towers with window grids and neon crowns, art-deco hotels, warehouses and gantry

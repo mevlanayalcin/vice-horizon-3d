@@ -1,3 +1,4 @@
+// Solaris Bay v10 module: audio (Web Audio synth SFX & 3-station FM radio).
 // audio.js — every sound is synthesised in the browser with Web Audio. Three original
 // radio stations run on a look-ahead sequencer: Sunset FM 96.6 (warm synthwave arpeggios
 // over a kick/snare groove), Palm Pulse 104.2 (tropical bassline, electric-piano chords,

@@ -1,3 +1,4 @@
+// Solaris Bay v10 module: turf (5-district standing & passive income).
 // turf.js — district standing in Solaris Bay. Five districts (Palm Strip, Neon Midtown,
 // Harbor Docks, Casa Hills and Starlight Key) each carry a 0–100% standing. Story jobs,
 // street races, courier and cab runs, and shaking off a three-star-plus chase raise the

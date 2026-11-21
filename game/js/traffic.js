@@ -1,3 +1,4 @@
+// Solaris Bay v10 module: traffic (civilian vehicles & sidewalk pedestrians).
 // traffic.js — autonomous Solaris Bay life. Cars loop their block in the correct
 // right-hand lane, slow for each other and for the player, and can be carjacked.
 // Pedestrians stroll the sidewalk rings, pause at corners, and scatter when shots

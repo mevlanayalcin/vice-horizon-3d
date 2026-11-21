@@ -1,3 +1,4 @@
+// Solaris Bay v10 module: minimap (vector road-graph GPS & turf overlay).
 // minimap.js — the vector map painter behind the HUD minimap and the M / Tab city map.
 //
 // The static city (sea, organic shoreline, beach, Starlight Key, pier, building footprints

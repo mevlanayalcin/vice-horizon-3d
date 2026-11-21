@@ -1,8 +1,15 @@
-// shotstage.js — photo mode for the entry's screenshots. `?shot=<name>` stages one
-// deterministic moment of real play with the game's own systems (missions, police,
-// traffic, combat, activities, progression) and then renders it live, HUD and all:
-// the golden-hour cover drive, a four-star pursuit, an on-foot shootout in Neon
-// Midtown, and the city map menu over the night skyline. Nothing is composited.
+// shotstage.js — photo mode for the entry's four screenshots. `?shot=<name>` stages one
+// deterministic moment of real play through the game's own systems (missions, police, crew,
+// turf, traffic, combat, activities, progression, saves) and renders it live, HUD and all:
+//   chase  4-star coastal pursuit on Ocean Boulevard: the drifting Solaris GT, a PIT unit on
+//          its rear quarter and a flanker, an SBPD roadblock with flares and officers firing,
+//          Air One's searchlight, civilian traffic and a scattering crowd;
+//   foot   the Solaris Vault cover shootout in Neon Midtown with Mateo laying covering fire,
+//          a downed guard, a cruiser and an officer closing and a roadblock down the avenue;
+//   menu   the city menu (M) at night: map, completion ring, medals, crew, saves;
+//   title  the Golden-Hour start screen over an aerial of the boulevard, beach and pier.
+// The SBPD RESPONSE table, wanted pill, ability cards and save cards read the same live
+// state a played frame would: nothing here draws a picture of the HUD.
 
 import { PALETTE, rgb } from './config.js';
 import { createVehicle, skidMarks, tyreSmoke } from './vehicles.js';
@@ -17,18 +24,30 @@ export function createShotStage(ctx) {
   return { stage: stageShot, frame: stageFrame };
 }
 
-/** Crew and turf as they stand `done` jobs into the story. */
-function stageCareer(done, standing) {
-  crew.reset();
-  crew.syncStory(missions.state.done.map((_, i) => i < done), false);
-  turf.reset();
-  turf.stage(standing);
+const STAGES = { chase: stageChase, foot: stageFoot, menu: stageMenu, title: stageTitle };
+
+function stageShot(name) {
+  const stage = STAGES[name] ?? stageTitle;
+  const title = stage === stageTitle;
+  hud.showLoadingDone();
+  hud.showTitle(title);
+  hud.setPlaying(!title, false);
+  setStageCity(null);
+  game.stagedSaves = null;
+  game.stagedCompletion = null;
+  stage();
+  hud.clearToasts();
 }
 
-function setStageHour(hour) {
-  game.hour = hour;
+/** Per-frame life in a staged frame: the flares and the muzzle sparks flicker. */
+function stageFrame(elapsed, name) {
+  if (name === 'foot' || name === 'chase') {
+    const pulse = 0.92 + Math.sin(elapsed * 9) * 0.06;
+    for (const pt of combat.particles) if (pt.staged) pt.size = pt.baseSize * pulse;
+  }
 }
 
+// ------------------------------------------------------------------ building blocks
 function clearScene() {
   for (const car of traffic.cars) car.removed = true;
   traffic.cars.length = 0;
@@ -38,13 +57,11 @@ function clearScene() {
   combat.particles.length = 0;
   skidMarks.length = 0;
   tyreSmoke.length = 0;
-  combat.player.dead = false;
-  combat.player.inVehicle = null;
-  combat.player.cover = null;
+  Object.assign(combat.player, { dead: false, inVehicle: null, cover: null });
   crew.mateo.visible = false;
   crew.mateo.staged = false;
   setVehicle(null);
-  // A frozen frame would leave mid-crossing pedestrians standing in traffic: keep the kerbs.
+  // Mid-crossing walkers would freeze in the traffic lanes: keep only the kerbside ones.
   const kerbside = traffic.pedestrians.filter((ped) => {
     const road = world.nearestRoad(ped.x, ped.z);
     return !road || road.distance > road.w / 2 + 0.5;
@@ -55,64 +72,101 @@ function clearScene() {
 
 function stageCar(type, x, z, heading, speed = 0, options = {}) {
   const car = createVehicle(type, x, z, heading, options);
-  car.y = world.groundHeight(x, z) + 0.02;
-  car.speed = speed;
-  car.parked = true;
-  car.staged = true;
+  Object.assign(car, { y: world.groundHeight(x, z) + 0.02, speed, parked: true, staged: true });
   if (options.color) car.color = options.color;
   parkedVehicles.push(car);
   return car;
 }
 
-/** A pedestrian caught mid-stride on the pavement. */
-function strollPed(x, z, heading, style = 'civ', options = {}) {
-  const ped = traffic.addStagedPed(x, z, heading, style, options);
-  ped.speedNow = options.speed ?? 1.3;
-  ped.phase = random() * Math.PI * 2;
-  return ped;
+/** A pedestrian: strolling, or (`flee`) running with arms up, or (`duck`) cowering. */
+function ped(x, z, heading, mode = 'stroll', style = 'civ') {
+  const options = mode === 'flee' ? { panic: 3, panicArms: true } : mode === 'duck' ? { panic: 3, duck: 1 } : {};
+  const p = traffic.addStagedPed(x, z, heading, style, options);
+  p.speedNow = mode === 'stroll' ? 1.3 : 0;
+  p.phase = random() * Math.PI * 2;
+  return p;
 }
 
-/** Arm the player as a mid-story criminal: cash, respect, the full weapon rail. */
+/** A mid-story criminal: cash, respect and the full five-slot weapon rail. */
 function careerPlayer({ cash, respect, health = 100, armor = 40, slot = 3, mag = 24 }) {
   const p = combat.player;
-  p.cash = cash;
-  p.respect = respect;
-  p.health = health;
-  p.armor = armor;
-  p.weapons = ['fists', 'pistol', 'smg', 'shotgun'];
-  p.weaponSlot = slot;
-  p.ammo.smg.mag = mag;
-  p.ammo.smg.reserve = 180;
-  p.dead = false;
+  Object.assign(p, { cash, respect, health, armor, weaponSlot: slot, dead: false, reloadTimer: 0 });
+  p.weapons = ['fists', 'pistol', 'smg', 'shotgun', 'carbine'];
+  Object.assign(p.ammo.pistol, { mag: 9, reserve: 84 });
+  Object.assign(p.ammo.smg, { mag, reserve: 180 });
+  Object.assign(p.ammo.shotgun, { mag: 6, reserve: 30 });
+  Object.assign(p.ammo.carbine, { mag: 24, reserve: 96 });
+}
+
+function playerOnFoot(x, z, heading) {
+  const p = combat.player;
+  Object.assign(p, { x, z, y: world.groundHeight(x, z), heading, aimYaw: heading, inVehicle: null, dead: false });
+  setVehicle(null);
+}
+
+/** Crew and turf as they stand `done` jobs into the story. */
+function stageCareer(done, standing) {
+  crew.reset();
+  crew.syncStory(missions.state.done.map((_, i) => i < done), false);
+  turf.reset();
+  turf.stage(standing);
+}
+
+/** The Z / X / C cards mid-fight: seconds left on each cooldown, and any effect still running. */
+function stageAbilities(cooldown, effect = {}) {
+  Object.assign(crew.state.cooldown, { jam: 0, patch: 0, nitro: 0 }, cooldown);
+  Object.assign(crew.state.effect, { jam: 0, patch: 0, nitro: 0 }, effect);
 }
 
 /** Rubber laid behind a sliding car: two rear-tyre streaks curving back along its arc. */
 function stageSkids(car, length, curve, alpha = 0.55) {
   const back = car.spec.wheelBase / 2, half = car.spec.width * 0.4;
+  const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+  const rx = Math.cos(car.heading), rz = -Math.sin(car.heading);
   for (let d = 0; d < length; d += 0.7) {
-    const h = car.heading - curve * (d / length) ** 1.4;
-    const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
     const bx = car.x - fx * (back + d), bz = car.z - fz * (back + d);
-    const bend = curve * d * d / length * 0.35;
-    const rx = Math.cos(car.heading), rz = -Math.sin(car.heading);
+    const bend = (curve * d * d) / length * 0.35;
     for (const side of [-1, 1]) {
-      skidMarks.push({ x: bx + rx * (side * half + bend), z: bz + rz * (side * half + bend), y: car.y + 0.075, rot: h, alpha: alpha * (1 - d / length * 0.6) });
+      skidMarks.push({ x: bx + rx * (side * half + bend), z: bz + rz * (side * half + bend), y: car.y + 0.075, rot: car.heading - curve * (d / length) ** 1.4, alpha: alpha * (1 - (d / length) * 0.6) });
     }
   }
 }
 
-/** Thick tyre smoke boiling off the rear wheels and trailing back. */
+/** Tyre smoke boiling off the rear wheels and trailing back. */
 function stageSmoke(car, count, spread = 6) {
   const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
   for (let i = 0; i < count; i += 1) {
     const d = car.spec.wheelBase / 2 + random() * spread;
     const side = (random() - 0.5) * car.spec.width * 1.4;
-    const life = 1.6 * (1 - d / (spread + 3));
     tyreSmoke.push({
       x: car.x - fx * d + Math.cos(car.heading) * side, y: car.y + 0.3 + d * 0.12 + random() * 0.3, z: car.z - fz * d - Math.sin(car.heading) * side,
-      size: 0.6 + d * 0.28 + random() * 0.4, life: Math.max(0.3, life), maxLife: 1.6, vy: 0,
+      size: 0.6 + d * 0.28 + random() * 0.4, life: Math.max(0.3, 1.6 * (1 - d / (spread + 3))), maxLife: 1.6, vy: 0,
     });
   }
+}
+
+/** Sparks frozen mid-burst where metal meets metal or rounds strike stone. */
+function sparks(x, y, z, count, spread = 0.5, color = rgb(0xffd27a)) {
+  for (let i = 0; i < count; i += 1) {
+    const a = random() * Math.PI * 2, r = random() * spread;
+    const size = 0.12 + random() * 0.14;
+    combat.particles.push({
+      x: x + Math.cos(a) * r, y: y + random() * spread * 0.8, z: z + Math.sin(a) * r * 0.6, vx: 0, vy: 0, vz: 0,
+      life: 999, maxLife: 999, color: i % 3 ? color : rgb(0xffffff), size, baseSize: size, gravity: 0, staged: true,
+    });
+  }
+}
+
+/** One frozen round: a muzzle star at the shooter and a tracer `head` of the way down the line. */
+function shot(x1, z1, x2, z2, y1, y2, color, head, opts = {}) {
+  const yaw = Math.atan2(x2 - x1, z2 - z1);
+  const reach = opts.reach ?? 0.78;
+  const mx = x1 + Math.sin(yaw) * reach, mz = z1 + Math.cos(yaw) * reach;
+  combat.tracers.push({
+    x1: mx, y1, z1: mz, x2, y2, z2, color, life: 999, maxLife: 999, head,
+    flash: opts.flash ?? true, flashSize: opts.flashSize ?? 0.5, spin: opts.spin ?? head * 7, ground: world.groundHeight(mx, mz),
+  });
+  return yaw;
 }
 
 /** Freeze the nearest street lamp mid-topple, dark, with sparks at its sheared base. */
@@ -122,458 +176,215 @@ function knockLamp(x, z, fallYaw, tilt) {
     const d = Math.hypot(l.x - x, l.z - z);
     if (d < best) { best = d; lamp = l; }
   }
-  if (!lamp) return null;
+  if (!lamp) return;
   Object.assign(lamp, { knocked: true, fallYaw, tilt, spin: 0, landed: true });
   lamp.glow.alpha = 0;
-  stagedSparks(lamp.x, 0.35, lamp.z, 12, 0.6);
-  return lamp;
+  sparks(lamp.x, 0.35, lamp.z, 10, 0.6);
 }
 
-function driveHero(type, x, z, heading, speed, colors = {}) {
-  const hero = stageCar(type, x, z, heading, speed);
-  if (colors.body) hero.color = colors.body;
-  if (colors.accent) hero.accent = colors.accent;
-  progression.tuneVehicle(hero);
-  setVehicle(hero);
-  return hero;
+/** A save card's data, exactly as save.list() returns it, for frames that never touch localStorage. */
+function slotData(id, label, savedAt, index, district, progress, cash, completion, crewIds) {
+  const acts = ['I', 'I', 'II', 'II', 'II', 'III', 'III', 'III'];
+  const titles = ['BOARDWALK BOOST', 'HARBOR CONTRABAND', 'NEON HEIST', 'PIER AMBUSH', 'CASA HILLS HUSH', 'STARLIGHT KEY RUN', 'CRANE LIGHT BLACKOUT', 'THE SOLARIS VAULT'];
+  return {
+    slot: id, label, exists: !!savedAt, savedAt, name: '', district, progress, total: 8, cash, crew: crewIds,
+    storyComplete: false, completion, act: savedAt ? `ACT ${acts[index]} — ${titles[index]}` : '', mission: index,
+  };
 }
+// Fixed local timestamps so every capture prints the same clock.
+const at = (d, h, m) => new Date(2026, 10, d, h, m).getTime();
 
-function stageShot(name) {
-  hud.showLoadingDone();
-  hud.showTitle(name === 'title');
-  hud.setPlaying(name !== 'title', false);
-  setStageCity(null);
-  const stages = { title: stageTitle, start: stageStart, chase: stageChase, foot: stageFoot, combat: stageCombat, night: stageNight, menu: stageMenu };
-  (stages[name] ?? stageTitle)();
-  if (!stages[name]) { hud.showTitle(true); hud.setPlaying(false, false); }
-}
-
-/** Per-frame life in a staged shot: a gentle camera breath only. */
-function stageFrame(elapsed, name) {
-  if (name === 'combat' || name === 'foot') {
-    const pulse = 0.9 + Math.sin(elapsed * 2) * 0.05;
-    combat.particles.forEach((pt) => { if (!pt.smoke) pt.size = 0.5 * pulse; });
-  }
-}
-
-function stageTitle() {
-  clearScene();
-  setStageHour(19.05);
-  missions.reset();
-  missions.state.done = [true, true, false, false, false];
-  missions.state.active = false;
-  combinePlayerOnFoot(-40, 285, 0.6);
-  stageCar('coupe', 118, 254, -Math.PI / 2);
-  stageCar('muscle', 214, 267, Math.PI / 2);
-  stageCar('supercar', 330, 251, -Math.PI / 2);
-  stageCar('van', -160, 254, -Math.PI / 2);
-  stageCar('sedan', 58, 267, Math.PI / 2);
-  for (const [x, z, h] of [[-20, 291, 1.2], [30, 293, 2.7], [96, 290, 0.4], [160, 294, 3.3], [-100, 288, 1.9], [-166, 325, 0.8], [120, 310, 2.2]]) {
-    traffic.addStagedPed(x, z, h, 'civ');
-  }
-  hud.setTitle({
-    progress: 2, cash: 18450, tokens: 5, peak: 3, hasSave: true,
-    saveLabel: 'MISSION 03 · $18,450', storyComplete: false,
-  });
-  camera.pos = [170, 24, 310];
-  camera.target = [-190, 7, 430];
-  camera.fov = 56;
-}
-
-
-function combinePlayerOnFoot(x, z, heading) {
-  const p = combat.player;
-  p.x = x; p.z = z;
-  p.y = world.groundHeight(x, z);
-  p.heading = heading;
-  p.aimYaw = heading;
-  p.inVehicle = null;
-  p.dead = false;
-  p.health = 100;
-  p.armor = 0;
-  setVehicle(null);
-}
-
-
-function stageCombat() {
-  clearScene();
-  setStageHour(19.42);
-  setStageCity({ districts: 5, tokens: 9, safehouse: true, missions: 4 });
-  // Mission 04, Coral Pier: on foot, gold waypoint on the gang, neon wheel behind.
-  missions.stage(3, 1, { banner: 'ACTIVE MISSION', done: 3 });
-  hud.els.banner.classList.remove('show');
-  const p = combat.player;
-  combinePlayerOnFoot(-164.4, 368, 0.02);
-  p.health = 74;
-  p.armor = 45;
-  p.cash = 36480;
-  p.weapons = ['fists', 'pistol', 'smg', 'shotgun'];
-  p.weaponSlot = 3;
-  p.ammo.smg.mag = 21;
-  p.ammo.smg.reserve = 180;
-  p.moving = true;
-  p.walkPhase = 1.1;
-  p.aimYaw = -0.06;
-  p.respect = 520;
-  setCameraAngles(0, 0.1);
-
-  // The gang dug in behind crates and drums on the pier, the wheel lit up behind them.
-  combat.spawnEnemy(-166, 380, { health: 80, style: 'goon', weapon: 'pistol' });
-  combat.spawnEnemy(-159.2, 383.2, { health: 80, style: 'goon', weapon: 'smg', stationary: true });
-  combat.spawnEnemy(-163.2, 400.6, { health: 80, style: 'goon', weapon: 'pistol', stationary: true });
-  const enemyA = combat.enemies[0];
-  const enemyB = combat.enemies[1];
-  const enemyC = combat.enemies[2];
-  if (enemyA) { enemyA.heading = Math.PI + 0.1; enemyA.phase = 1.4; enemyA.hitFlash = 0.2; }
-  if (enemyB) { enemyB.heading = Math.PI + 0.35; enemyB.phase = 0.4; }
-  if (enemyC) { enemyC.heading = Math.PI - 0.3; enemyC.phase = 2.2; enemyC.hitFlash = 0.1; }
-  const deck = 1.1;
-  // A frozen frame of the exchange: muzzle flash, tracers, sparks and shell casings.
-  combat.tracers.push({ x1: -164.4, y1: deck + 1.48, z1: 368.7, x2: -165.9, y2: deck + 1.4, z2: 379.6, color: rgb(0xffd27a), life: 999, maxLife: 999 });
-  combat.tracers.push({ x1: -164.3, y1: deck + 1.46, z1: 368.8, x2: -159.4, y2: deck + 1.38, z2: 382.8, color: rgb(0xffb44a), life: 999, maxLife: 999 });
-  combat.tracers.push({ x1: -163.3, y1: deck + 1.45, z1: 400.1, x2: -164.9, y2: deck + 1.4, z2: 369.4, color: rgb(0xff5a3c), life: 999, maxLife: 999 });
-  for (let i = 0; i < 7; i += 1) {
-    combat.particles.push({ x: -165.9, y: deck + 1.4, z: 379.6, vx: (random() - 0.5) * 3, vy: random() * 2, vz: (random() - 0.5) * 3, life: 999, maxLife: 999, color: rgb(0xa81f2a), size: 0.5, gravity: 0 });
-  }
-  for (let i = 0; i < 5; i += 1) {
-    combat.particles.push({ x: -164.3 + (random() - 0.5) * 0.4, y: deck + 1.5, z: 368.9, vx: 0, vy: 0, vz: 0, life: 999, maxLife: 999, color: rgb(0xffcf6a), size: 0.24, gravity: 0 });
-  }
-  combat.addImpact(-165.9, deck + 1.4, 379.5, PALETTE.gold, 999);
-  combat.addImpact(-161.4, deck + 1.2, 376.6, rgb(0xffe08a), 999);
-  traffic.addStagedPed(-170.5, 366, -1.2, 'civ', { panic: 3, panicArms: true });
-  traffic.addStagedPed(-158.4, 372, 0.4, 'civ', { panic: 2, panicArms: true });
-  police.setWanted(1);
-  hud.dialogue('MATEO', 'Coral Pier, under the wheel. They took the codes — take them back.', 120000);
-  camera.pos = [-162.6, 3.7, 363.4];
-  camera.target = [-165.2, 4.6, 392];
-  camera.fov = 62;
-}
-
-
-/** Twilight pursuit: cruisers at the player's door, helicopter above, stars lit. */
+// ------------------------------------------------------------------ 01 · the chase (cover)
+/** Four stars at golden hour: roadblock ahead, Air One overhead, two units on the GT's bumpers. */
 function stageChase() {
   clearScene();
-  setStageHour(19.14);
-  setStageCity({ districts: 4, tokens: 7, safehouse: true, missions: 3 });
+  game.hour = 19.08;
+  setStageCity({ districts: 4, tokens: 7, safehouse: true, missions: 2 });
   missions.stage(2, 2, { banner: 'ACTIVE MISSION', done: 2 });
   hud.els.banner.classList.remove('show');
-  const p = combat.player;
-  p.cash = 41280;
-  p.health = 74;
-  p.armor = 30;
-  p.weapons = ['fists', 'pistol', 'smg', 'shotgun'];
-  p.weaponSlot = 3;
-  p.ammo.smg.mag = 19;
-  p.respect = 620;
+  careerPlayer({ cash: 41280, respect: 760, health: 74, armor: 30, slot: 3, mag: 19 });
+  stageCareer(2, { palm: 72, harbor: 46, midtown: 38, hills: 14, key: 6 });
+  crew.mateo.status = 'RIDING SHOTGUN';
+  stageAbilities({ patch: 14, nitro: 21.4 }, { nitro: 2.6 });
 
   const hero = stageCar('supercar', 128, 251.4, -Math.PI / 2 + 0.1, 41);
-  hero.boost = 0.42;
-  hero.boosting = true;
-  hero.drift = 3.8;
-  hero.steer = -0.6;
-  hero.color = rgb(0xff2f86);
-  hero.accent = rgb(0x39e9ff);
+  Object.assign(hero, { boost: 0.92, boosting: true, drift: 3.8, steer: -0.6, health: 86, color: rgb(0xff2f86), accent: rgb(0x39e9ff) });
+  progression.state.neon = 'cyan';
   setVehicle(hero);
-  p.x = hero.x; p.z = hero.z; p.y = hero.y;
-  p.heading = hero.heading;
 
   police.setWanted(4);
   police.setPeak(4);
-  stageCareer(2, { palm: 52, harbor: 38, midtown: 24, hills: 6, key: 0 });
-  crew.mateo.status = 'RIDING SHOTGUN';
-  // Two interceptors on the bumper, a third closing from behind.
-  const c1 = police.spawnStagedCruiser(134.5, 246.6, -Math.PI / 2 - 0.08);
-  const c2 = police.spawnStagedCruiser(136.5, 256.8, -Math.PI / 2 + 0.1);
-  const c4 = police.spawnStagedCruiser(166, 250, -Math.PI / 2);
-  [c1, c2, c4].forEach((c, i) => { c.sirenOn = true; c.remote = true; c.sirenPhase = i * 0.37; c.speed = 38; });
-
-  // SBPD roadblock ahead: two cruisers nose-in in a V across the westbound lanes, striped
-  // barriers in the gaps, a fan of burning red flares on the asphalt, officers behind.
+  // UNIT-12 on the rear quarter lining up the PIT, UNIT-07 flanking on the beach side,
+  // UNIT-21 closing from behind the camera and UNIT-33 running the intercept a block north.
+  const units = [
+    police.spawnStagedCruiser(134.2, 247.4, -Math.PI / 2 - 0.12),
+    police.spawnStagedCruiser(133, 259.2, -Math.PI / 2 + 0.1),
+    police.spawnStagedCruiser(168, 250.5, -Math.PI / 2),
+    police.spawnStagedCruiser(150, 130, -Math.PI / 2),
+  ];
+  units.forEach((c, i) => Object.assign(c, { sirenOn: true, remote: true, pursuit: true, sirenPhase: i * 0.37, speed: 38 }));
+  // TAC-04: two cruisers nose-in across the westbound lanes, sawhorses, a fan of flares.
   police.stageRoadblock(104, 250.6, Math.PI / 2, 1, 8.6, 'Ocean Boulevard');
-  traffic.addStagedPed(99.5, 244.4, Math.PI / 2, 'cop');
-  traffic.addStagedPed(99, 257.2, Math.PI / 2, 'cop');
-  // Air One hovering over the boulevard, its searchlight pinning the supercar.
   police.stageHelicopter({ x: 112, z: 249, y: 15.5, heading: Math.PI / 2 + 0.35, spotX: 126.5, spotZ: 251.2 });
-  hud.dispatch('SBPD DISPATCH · AIR ONE', 'Roadblock set on Ocean Boulevard, flares down. Air One has the suspect in the light.', 0);
+  police.setSeen(true);
+  // Officers dug in behind the barricade, firing on the GT; their rounds spark off the bonnet.
+  for (const [x, z, h] of [[99.6, 245.2, Math.PI / 2 + 0.2], [99.2, 256.6, Math.PI / 2 - 0.25]]) {
+    const cop = combat.spawnEnemy(x, z, { style: 'cop', police: true, weapon: 'pistol', stationary: true, health: 80 });
+    Object.assign(cop, { heading: h, kneel: false, barricade: true, phase: 0 });
+  }
+  shot(99.6, 245.2, 127.4, 250.6, 1.45, 1.0, rgb(0xff9a5a), 0.55, { flashSize: 0.5, reach: 0.7 });
+  shot(99.2, 256.6, 126.8, 252.2, 1.45, 1.05, rgb(0xff8a4a), 0.72, { flashSize: 0.45, reach: 0.7 });
+  sparks(125.9, 1.0, 251.4, 6, 0.3);
+  hud.dispatch('SBPD DISPATCH · AIR ONE', 'TAC-04 has Ocean Boulevard closed, flares down. Air One has the suspect in the light. UNIT-12, take the PIT.', 0);
 
-  stageCar('coupe', 60, 254, -Math.PI / 2, 18);
-  stageCar('taxi', 112, 268, Math.PI / 2, 0);
-  stageCar('van', 196, 268, Math.PI / 2, 0);
-  stageCar('sedan', 70, 266, Math.PI / 2, 0);
-  // Rubber and smoke from the drifting hero car, sparks where the cruiser rubbed its flank.
+  // Civilian traffic: stopped short of the roadblock westbound, rolling past eastbound.
+  stageCar('coupe', 72, 247.8, -Math.PI / 2, 0, { color: rgb(0xff8a3c) });
+  stageCar('van', 62, 254.6, -Math.PI / 2 + 0.05, 0);
+  stageCar('taxi', 112, 268, Math.PI / 2, 9);
+  stageCar('sedan', 84, 266.6, Math.PI / 2, 12, { color: rgb(0x2f7fbf) });
+  stageCar('muscle', 52, 271.2, Math.PI / 2, 14, { color: rgb(0x1f9e8f) });
+  stageCar('coupe', 98, 269, Math.PI / 2, 10, { color: rgb(0x8f5bb8) });
+  stageCar('sedan', 92, 239.2, -Math.PI / 2, 0, { color: rgb(0xf1efe6) });
+  // The slide: rubber, smoke, the cruiser's nose grinding sparks off the GT's quarter.
   stageSkids(hero, 26, -0.35, 0.6);
-  stageSmoke(hero, 18, 7);
-  // A kerbside lamppost the slide clipped, caught mid-fall in a shower of sparks.
+  stageSmoke(hero, 22, 7);
+  stageSmoke(units[0], 6, 3);
+  sparks(131.2, 0.55, 249.4, 9, 0.5, rgb(0xff9a3a));
   knockLamp(124, 245.5, -Math.PI / 2 - 0.5, 0.62);
-  for (let i = 0; i < 6; i += 1) {
-    combat.particles.push({
-      x: 130.6 + random() * 1.2, y: 0.4 + random() * 0.5, z: 249.6 + random() * 0.6, vx: 0, vy: 0, vz: 0,
-      life: 800, maxLife: 999, color: i % 2 ? rgb(0xffd27a) : rgb(0xff8a3a), size: 0.2 + random() * 0.15, gravity: 0,
-    });
-  }
-  for (const [x, z, h] of [[150, 291, 1.7], [122, 293, 2.5], [112, 238, 0.6], [96, 239, 3.1], [64, 288, 1.2], [104, 237, 2.2]]) {
-    traffic.addStagedPed(x, z, h, 'civ', { panic: 3, panicArms: true });
-  }
-  hud.dialogue('MATEO', 'Four stars on the Strip. Marina lockup stays open if you drive like that.', 120000);
+
+  // The crowd: hotel-side pavement, beach promenade and the sand, scattering from the chase.
+  const crowd = [
+    [118, 238.6, 2.6, 'flee'], [110, 237.4, 0.4, 'flee'], [96, 238.2, 3.0, 'flee'], [86, 239.4, 1.2, 'duck'], [76, 237.8, -1.6, 'stroll'],
+    [126, 239.6, 2.2, 'flee'], [104, 286.6, 0.7, 'duck'], [94, 290.4, 1.9, 'flee'], [88, 285.6, 2.6, 'flee'], [80, 288.2, -1.5, 'stroll'],
+    [70, 291.0, 1.5, 'stroll'], [60, 287.2, 2.9, 'flee'], [50, 292.4, 1.1, 'stroll'], [64, 296.6, 2.2, 'stroll'],
+  ];
+  for (const [x, z, h, mode] of crowd) ped(x, z, h, mode);
+  ped(97.8, 249.4, Math.PI / 2, 'stroll', 'cop');
+
+  hud.dialogue('MATEO', 'Roadblock on Ocean! Thread the gap by the flares, I\'ll keep the bird busy. Causeway is two blocks out.', 120000);
   camera.pos = [149, 4.2, 253.2];
   camera.target = [112, 3.1, 250.2];
   camera.fov = 60;
 }
 
-
-/** Midnight vista down Neon Midtown and the Palm Strip: skyline, bay wheel, wet road. */
-function stageNight() {
-  clearScene();
-  setStageHour(22.34);
-  setStageCity({ districts: 5, tokens: 10, safehouse: true, missions: 4 });
-  missions.stage(2, 2, { banner: 'ACTIVE MISSION', done: 3 });
-  hud.els.banner.classList.remove('show');
-  const p = combat.player;
-  p.cash = 91250;
-  p.health = 100;
-  p.armor = 70;
-  p.weapons = ['fists', 'pistol', 'smg', 'shotgun'];
-  p.weaponSlot = 3;
-  p.ammo.smg.mag = 24;
-  p.respect = 980;
-
-  // Hero supercar cruising west under the neon, headlights washing the asphalt.
-  const hero = stageCar('supercar', 302, 251.5, -Math.PI / 2, 34);
-  hero.boost = 0.8;
-  hero.boosting = true;
-  hero.drift = 2.4;
-  hero.color = rgb(0x27e2d2);
-  hero.accent = rgb(0xff3f95);
-  setVehicle(hero);
-  p.x = hero.x; p.z = hero.z; p.y = hero.y;
-  p.heading = hero.heading;
-
-  // Live traffic in both directions, lights on, plus promenade strollers.
-  stageCar('taxi', 244, 266, Math.PI / 2, 12);
-  stageCar('sedan', 196, 267.5, Math.PI / 2, 10);
-  stageCar('coupe', 180, 252.5, -Math.PI / 2, 21);
-  stageCar('muscle', 132, 253, -Math.PI / 2, 18);
-  stageCar('van', 96, 266.5, Math.PI / 2, 8);
-  stageCar('supercar', 58, 251, -Math.PI / 2, 26);
-  stageCar('coupe', 24, 283, Math.PI / 2, 0);
-  stageCar('taxi', 158, 283.5, -Math.PI / 2, 0);
-  for (const [x, z, h] of [
-    [300, 291, 1.4], [262, 293, 2.8], [222, 290, 0.6], [184, 292, 3.2],
-    [140, 289, 1.9], [96, 294, 2.5], [46, 290, 0.2], [312, 238, 2.1],
-    [250, 237.5, 0.8], [170, 239, 2.9], [110, 238, 1.3],
-  ]) {
-    traffic.addStagedPed(x, z, h, 'civ');
-  }
-  hud.dialogue('ELENA', 'Midnight on the Strip. Every window lit, the wheel turning, the whole city open.', 120000);
-  // Wide midnight vista: skyline right, lit Ferris wheel over the bay to the left.
-  camera.pos = [311, 2.6, 255.5];
-  camera.target = [283, 2.2, 249.5];
-  camera.fov = 64;
-}
-
-
-/** The cover: a golden-hour run west down Ocean Boulevard with a cruiser on the bumper. */
-function stageStart() {
-  clearScene();
-  setStageHour(18.98);
-  missions.stage(1, 0, { banner: 'ACTIVE MISSION', done: 1 });
-  hud.els.banner.classList.remove('show');
-  careerPlayer({ cash: 23850, respect: 420, health: 92, armor: 40, mag: 27 });
-  progression.state.upgrades.engine = 1;
-  progression.state.stored = ['coupe', 'taxi'];
-  // The Paint Shop's Bay Cyan underglow lit under the Solaris GT.
-  progression.state.neon = 'cyan';
-  const p = combat.player;
-
-  const hero = driveHero('supercar', 30, 252.5, -Math.PI / 2 + 0.03, 31, { body: rgb(0xff2f86), accent: rgb(0x39e9ff) });
-  hero.boost = 0.66;
-  hero.boosting = true;
-  hero.drift = 1.2;
-  hero.steer = -0.15;
-  stageSkids(hero, 18, -0.12, 0.42);
-  stageSmoke(hero, 6, 4);
-  p.x = hero.x; p.z = hero.z; p.y = hero.y; p.heading = hero.heading;
-
-  // Two stars for the stolen GT: a patrol cruiser closing on the rear quarter.
-  police.setWanted(2);
-  police.setPeak(2);
-  stageCareer(1, { palm: 34, harbor: 12, midtown: 8, hills: 0, key: 0 });
-  const cop = police.spawnStagedCruiser(32, 247, -Math.PI / 2 - 0.07);
-  cop.sirenOn = true; cop.remote = true; cop.speed = 33; cop.sirenPhase = 0.2;
-
-  // Evening traffic both ways down the Strip.
-  stageCar('coupe', -6, 247.5, -Math.PI / 2, 22, { color: rgb(0xff8a3c) });
-  stageCar('taxi', -44, 255, -Math.PI / 2, 18);
-  stageCar('sedan', -96, 248, -Math.PI / 2, 16, { color: rgb(0x2f7fbf) });
-  stageCar('van', -150, 255.5, -Math.PI / 2, 14);
-  stageCar('muscle', -210, 248, -Math.PI / 2, 20);
-  stageCar('sedan', 6, 267, Math.PI / 2, 14, { color: rgb(0xf1efe6) });
-  stageCar('muscle', -38, 272, Math.PI / 2, 16, { color: rgb(0x1f9e8f) });
-  stageCar('taxi', -90, 266.5, Math.PI / 2, 12);
-  stageCar('coupe', -140, 272, Math.PI / 2, 15, { color: rgb(0x8f5bb8) });
-  stageCar('supercar', -200, 267, Math.PI / 2, 24, { color: rgb(0xffc24b) });
-  // Parked cars on the hotel kerb and the promenade.
-  stageCar('coupe', -18, 239.5, -Math.PI / 2, 0, { color: rgb(0x5fb8c8) });
-  stageCar('sedan', -70, 239.5, -Math.PI / 2, 0, { color: rgb(0xc85f8a) });
-  stageCar('muscle', -30, 281, Math.PI / 2, 0, { color: rgb(0xdf7a3a) });
-
-  // Strollers on both pavements.
-  for (const [x, z, h] of [
-    [12, 238, -Math.PI / 2], [4, 240.5, Math.PI / 2], [-26, 237.5, -Math.PI / 2], [-48, 240, Math.PI / 2],
-    [-80, 238, -Math.PI / 2], [-120, 240, Math.PI / 2], [-150, 238.5, -Math.PI / 2],
-    [18, 286, Math.PI / 2], [-8, 289, -Math.PI / 2], [-40, 287, Math.PI / 2], [-66, 291, -Math.PI / 2],
-    [-98, 286.5, Math.PI / 2], [-132, 290, -Math.PI / 2], [-176, 287, Math.PI / 2],
-  ]) {
-    strollPed(x, z, h, 'civ');
-  }
-  hud.dialogue('ELENA', 'Harbor gate, west end of the Strip. Lose the cruiser before you pull in.', 120000);
-  camera.pos = [41.5, 3.2, 257.4];
-  camera.target = [14, 1.7, 251.2];
-  camera.fov = 62;
-}
-
-/** A frozen exchange of fire: muzzle star at the shooter, a tracer streak `head` of the way down the line. */
-function stagedShot(x1, z1, x2, z2, y1, y2, color, head, opts = {}) {
-  const yaw = Math.atan2(x2 - x1, z2 - z1);
-  const mx = x1 + Math.sin(yaw) * (opts.reach ?? 0.78), mz = z1 + Math.cos(yaw) * (opts.reach ?? 0.78);
-  combat.tracers.push({
-    x1: mx, y1, z1: mz, x2, y2, z2, color, life: 999, maxLife: 999, head,
-    flash: opts.flash ?? true, flashSize: opts.flashSize ?? 0.5, spin: opts.spin ?? head * 7, ground: world.groundHeight(mx, mz),
-  });
-  return yaw;
-}
-
-/** Sparks frozen mid-burst where rounds strike metal or stone. */
-function stagedSparks(x, y, z, count, spread = 0.5, color = rgb(0xffd27a)) {
-  for (let i = 0; i < count; i += 1) {
-    const a = random() * Math.PI * 2, r = random() * spread;
-    combat.particles.push({
-      x: x + Math.cos(a) * r, y: y + random() * spread * 0.8, z: z + Math.sin(a) * r * 0.6,
-      vx: 0, vy: 0, vz: 0, life: 999, maxLife: 999, color: i % 3 ? color : rgb(0xffffff), size: 0.12 + random() * 0.12, gravity: 0,
-    });
-  }
-}
-
-/** On foot in Neon Midtown: a cover firefight at the Solaris Vault plaza, Mateo alongside. */
+// ------------------------------------------------------------------ 02 · on foot at the vault
+/** Neon twilight: the player low behind the teal Coastal Muscle, Mateo off its nose, guards dug in. */
 function stageFoot() {
   clearScene();
-  setStageHour(19.72);
+  game.hour = 19.72;
+  setStageCity({ districts: 4, tokens: 7, safehouse: true, missions: 2 });
   missions.stage(2, 1, { banner: 'ACTIVE MISSION', done: 2 });
   hud.els.banner.classList.remove('show');
-  careerPlayer({ cash: 31640, respect: 760, health: 81, armor: 55, mag: 22 });
-  stageCareer(2, { palm: 52, harbor: 38, midtown: 24, hills: 6, key: 0 });
+  careerPlayer({ cash: 31640, respect: 760, health: 81, armor: 55, slot: 3, mag: 22 });
+  stageCareer(2, { palm: 72, harbor: 46, midtown: 38, hills: 14, key: 6 });
+  stageAbilities({ jam: 27 });
   const p = combat.player;
   const px = 63.4, pz = 0.3;
-  combinePlayerOnFoot(px, pz, Math.PI + 0.3);
-  p.health = 81;
-  p.armor = 55;
-  p.moving = false;
-  p.walkPhase = 0.8;
+  playerOnFoot(px, pz, Math.PI + 0.3);
+  Object.assign(p, { moving: false, walkPhase: 0.8 });
   setCameraAngles(Math.PI, 0.1);
 
-  // Armoured vault guards dug in behind the plaza barricades and the colonnade.
-  const spots = [[53.6, -18.2, 'smg'], [72.4, -23.2, 'pistol'], [61.4, -32.6, 'smg'], [82.2, -14.2, 'pistol'], [45.5, -27.5, 'pistol']];
+  // Armoured vault guards behind the plaza barricades and the colonnade; one already down.
+  const spots = [[53.6, -18.2, 'smg'], [72.4, -23.2, 'pistol'], [61.4, -32.6, 'smg'], [82.2, -14.2, 'pistol'], [45.5, -27.5, 'pistol'], [58.2, -11.6, 'smg']];
   for (const [x, z, weapon] of spots) combat.spawnEnemy(x, z, { health: 85, style: 'guard', weapon, stationary: true, mission: true });
   combat.enemies.forEach((e) => { e.heading = Math.atan2(px - e.x, pz - e.z); e.phase = 0; });
   combat.enemies[0].hitFlash = 0.25;
   combat.enemies[3].hitFlash = 0.2;
+  Object.assign(combat.enemies[5], { alive: false, health: 0, deathTimer: 0.6, heading: 2.2 });
 
-  // Cover: the stealable teal muscle car broadside at the kerb, the bank's armoured van beyond.
+  // Cover: the stealable teal Coastal Muscle at the kerb, the bank's armoured van beyond.
   const muscle = stageCar('muscle', 65.6, -1.5, Math.PI / 2 + 0.08, 0, { color: rgb(0x1f9e8f) });
   stageCar('van', 86.5, -8.4, -Math.PI / 2, 0, { color: rgb(0x3a4250) });
   stageCar('coupe', 38, 7.5, Math.PI / 2, 0, { color: rgb(0xff5a3c) });
-  // The player down in low cover at the car's tail, rising over the boot to fire.
+  stageCar('taxi', 104, 7.2, -Math.PI / 2, 0);
   combat.stageCover({ x: px, z: -0.6, kind: 'car', name: muscle.spec.name, car: muscle }, 0.2);
 
-  // The player's SMG burst over the boot at the nearest guard, sparking off the barricade.
-  const gy = 1.02;
-  const yaw = stagedShot(px, pz, 53.9, -18.0, gy, gy + 0.1, rgb(0xffe6a8), 0.42, { flashSize: 0.62 });
-  stagedShot(px, pz, 54.6, -18.9, gy, gy - 0.1, rgb(0xfff2c8), 0.83, { flash: false });
+  // The player's SMG burst over the boot, sparking off the barricade.
+  const yaw = shot(px, pz, 53.9, -18.0, 1.02, 1.12, rgb(0xffe6a8), 0.42, { flashSize: 0.62 });
+  shot(px, pz, 54.6, -18.9, 1.02, 0.92, rgb(0xfff2c8), 0.83, { flash: false });
   p.aimYaw = yaw;
   p.heading = yaw + 0.2;
-
-  // Mateo kneeling off the car's nose in his plate carrier, laying covering bursts on the guards.
+  // Mateo kneeling off the nose in his plate carrier, laying cyan covering bursts.
   const mx = 69.4, mz = -0.3;
   const myaw = Math.atan2(82.2 - mx, -14.2 - mz);
   crew.stageMateo({ x: mx, z: mz, heading: myaw, aimYaw: myaw, crouch: 0.62, status: 'COVERING FIRE' });
-  const my = 1.0;
-  stagedShot(mx, mz, 82.0, -14.6, my, 1.3, rgb(0x9ff3ff), 0.38, { flashSize: 0.58 });
-  stagedShot(mx, mz, 82.6, -13.6, my, 1.2, rgb(0xc8faff), 0.78, { flash: false });
-  stagedShot(mx, mz, 72.6, -22.6, my, 1.25, rgb(0x9ff3ff), 0.62, { flash: false });
-  stagedSparks(82.2, 1.3, -14.6, 6, 0.35, rgb(0xbff6ff));
-
-  // Return fire: guard muzzle stars and orange streaks cracking past toward the car.
-  stagedShot(72.4, -23.2, 64.6, -1.4, 1.4, 1.05, rgb(0xff9a5a), 0.62, { flashSize: 0.55, reach: 0.7 });
-  stagedShot(61.4, -32.6, 63.3, -1.8, 1.4, 1.1, rgb(0xff8a4a), 0.74, { flashSize: 0.5, reach: 0.7 });
-  stagedShot(45.5, -27.5, 66.8, -1.2, 1.4, 1.0, rgb(0xffa060), 0.35, { flashSize: 0.45, reach: 0.7 });
-  // Brass casings tumbling out to the right of the gun.
+  shot(mx, mz, 82.0, -14.6, 1.0, 1.3, rgb(0x9ff3ff), 0.38, { flashSize: 0.58 });
+  shot(mx, mz, 82.6, -13.6, 1.0, 1.2, rgb(0xc8faff), 0.78, { flash: false });
+  shot(mx, mz, 72.6, -22.6, 1.0, 1.25, rgb(0x9ff3ff), 0.62, { flash: false });
+  sparks(82.2, 1.3, -14.6, 6, 0.35, rgb(0xbff6ff));
+  // Return fire cracking back toward the car.
+  shot(72.4, -23.2, 64.6, -1.4, 1.4, 1.05, rgb(0xff9a5a), 0.62, { flashSize: 0.55, reach: 0.7 });
+  shot(61.4, -32.6, 63.3, -1.8, 1.4, 1.1, rgb(0xff8a4a), 0.74, { flashSize: 0.5, reach: 0.7 });
+  shot(45.5, -27.5, 66.8, -1.2, 1.4, 1.0, rgb(0xffa060), 0.35, { flashSize: 0.45, reach: 0.7 });
   for (let i = 0; i < 4; i += 1) {
     combat.particles.push({
       x: px + 0.45 + i * 0.2, y: 1.2 + i * 0.14 - (i > 2 ? 0.5 : 0), z: pz - 0.2 + i * 0.1, vx: 0, vy: 0, vz: 0,
       life: 999, maxLife: 999, color: rgb(0xd9a441), size: 0.3, gravity: 0, casing: true, spin: i * 1.7,
     });
   }
-  // Rounds sparking off the muscle car's roof and the striped barricade.
-  stagedSparks(64.4, 1.3, -1.4, 6, 0.35);
-  stagedSparks(66.6, 1.25, -1.2, 3, 0.3);
-  stagedSparks(54.7, 1.0, -18.8, 7, 0.4);
+  sparks(64.4, 1.3, -1.4, 6, 0.35);
+  sparks(66.6, 1.25, -1.2, 3, 0.3);
+  sparks(54.7, 1.0, -18.8, 7, 0.4);
   combat.addImpact(54.6, 1.3, -18.4, PALETTE.gold, 999);
+  // Glowing smoke drifting off the barricade where the rounds hit.
+  for (let i = 0; i < 8; i += 1) {
+    tyreSmoke.push({ x: 54 + random() * 3, y: 0.6 + random() * 1.2, z: -17.5 - random() * 2, size: 1.2 + random() * 0.9, life: 1.1, maxLife: 1.6, vy: 0 });
+  }
 
-  // Heat arriving: one cruiser swinging in off the cross street.
-  police.setWanted(2);
+  // Three stars and the response arriving: UNIT-12 swinging in, an officer on foot, TAC-04 down the avenue.
+  police.setWanted(3);
   police.setPeak(3);
   const cop = police.spawnStagedCruiser(24, -6, Math.PI / 2 + 0.35);
-  cop.sirenOn = true; cop.remote = true; cop.speed = 18;
-  // Bystanders scattering, one cowering by the kerb with her hands over her head.
-  traffic.addStagedPed(49, 9.5, -1.2, 'civ', { panic: 3, panicArms: true });
-  traffic.addStagedPed(92, 11, 1.4, 'civ', { panic: 3, panicArms: true });
-  traffic.addStagedPed(96, -2, 2.6, 'civ', { panic: 3, panicArms: true });
-  traffic.addStagedPed(56.5, -7.5, 2.4, 'civ', { panic: 3, duck: 1, longHair: true });
-  for (const [x, z, h] of [[30, 14, Math.PI / 2], [104, 15, -Math.PI / 2]]) strollPed(x, z, h);
-  hud.dialogue('MATEO', 'Stay low behind the muscle car. I\'ve got the guards on the right. Peek and fire.', 120000);
-  // Low over-the-shoulder camera behind the player's cover, Mateo framed to the right.
+  Object.assign(cop, { sirenOn: true, remote: true, pursuit: true, speed: 18 });
+  const officer = combat.spawnEnemy(30.5, 9.5, { style: 'cop', police: true, weapon: 'pistol', health: 80 });
+  Object.assign(officer, { heading: Math.atan2(px - 30.5, pz - 9.5), phase: 1.2, speed: 3.4, callsign: 'OFC-31' });
+  police.stageRoadblock(132, 0, -Math.PI / 2, 1, 8.6, 'Midtown Avenue');
+  police.setSeen(true);
+
+  // Civilians caught in it: hands up and running, one cowering by the kerb.
+  for (const [x, z, h, mode] of [[49, 9.5, -1.2, 'flee'], [92, 11, 1.4, 'flee'], [96, -2, 2.6, 'flee'], [56.5, -7.5, 2.4, 'duck'], [78, 12.5, 0.9, 'flee'], [42, 13, -2.2, 'flee']]) {
+    ped(x, z, h, mode);
+  }
+  hud.dialogue('MATEO', 'Stay low behind the muscle car. I have the guards on the right. Then we take it, the keys are in it.', 120000);
   camera.pos = [px + 0.6, 2.75, pz + 7.8];
   camera.target = [px + 2.6, 0.95, pz - 30];
   camera.fov = 54;
 }
 
-/** The city menu over the night skyline: full map, story arc, activities, garage. */
+// ------------------------------------------------------------------ 03 · city map, progression, saves
+/** The city menu over the night skyline, five jobs in: every system's progress at once. */
 function stageMenu() {
   clearScene();
-  setStageHour(22.1);
-  missions.stage(2, 1, { banner: 'ACTIVE MISSION', done: 2 });
+  game.hour = 22.1;
+  missions.stage(5, 0, { banner: 'ACTIVE MISSION', done: 5 });
+  missions.state.ratings = ['G', 'S', 'G', 'B', 'G', null, null, null];
   hud.els.banner.classList.remove('show');
   careerPlayer({ cash: 58420, respect: 1180, health: 100, armor: 70 });
-  progression.state.upgrades = { engine: 2, nitro: 1, armor: 1, grip: 0 };
+  progression.state.upgrades = { engine: 2, nitro: 2, armor: 1, grip: 1 };
   progression.state.stored = ['coupe', 'muscle', 'taxi', 'sedan'];
   Object.assign(progression.state.stats, { stolen: 23, stunts: 5, evaded: 9, activities: 6, takedowns: 31 });
-  activities.state.best = { sprint: 38.4, courier: 61.2, circuit: 30.9 };
-  activities.state.completed = { sprint: 2, courier: 1, circuit: 1 };
+  activities.state.best = { sprint: 38.4, courier: 61.2, circuit: 30.9, fares: 88.0 };
+  activities.state.completed = { sprint: 2, courier: 1, circuit: 1, fares: 1 };
   activities.state.streak = 3;
   activities.state.bestStreak = 3;
   progression.state.paint = 'lagoon';
   progression.state.neon = 'pink';
-  stageCareer(2, { palm: 72, harbor: 46, midtown: 38, hills: 14, key: 6 });
+  game.tokens.forEach((t, i) => { t.taken = i < 9; });
+  stageCareer(5, { palm: 72, midtown: 58, harbor: 46, hills: 34, key: 20 });
   crew.mateo.status = 'RIDING SHOTGUN';
-  // The save pill and SAVES tab read these staged slots, so photo mode never writes to the
-  // visitor's localStorage. Timestamps are fixed local times, the same on every capture.
-  const at = (h, m) => new Date(2026, 10, 20, h, m).getTime();
-  const slot = (id, label, savedAt, name, district, progress, cash, crewIds) => ({
-    slot: id, label, exists: !!savedAt, savedAt, name, district, progress, total: 8, cash, crew: crewIds, storyComplete: false,
-  });
+  // The SAVES cards read these, so photo mode never writes the visitor's localStorage.
   game.stagedSaves = [
-    slot('auto', 'AUTOSAVE', at(22, 4), '03 · Neon Heist Getaway', 'Neon Midtown', 2, 58420, ['elena', 'mateo']),
-    slot('1', 'SLOT 1', at(21, 58), '03 · Neon Heist Getaway', 'Palm Strip', 2, 57900, ['elena', 'mateo']),
-    slot('2', 'SLOT 2', at(19, 31), '02 · Harbor Contraband', 'Harbor Docks', 1, 21350, ['elena']),
-    slot('3', 'SLOT 3', 0, '', 'Palm Strip', 0, 0, []),
+    slotData('auto', 'AUTOSAVE', at(20, 22, 4), 5, 'Palm Strip', 5, 58420, 64.2, ['elena', 'mateo']),
+    slotData('1', 'SLOT 1', at(20, 21, 58), 5, 'Palm Strip', 5, 57900, 63.8, ['elena', 'mateo']),
+    slotData('2', 'SLOT 2', at(19, 23, 12), 2, 'Neon Midtown', 2, 41280, 42.0, ['elena', 'mateo']),
+    slotData('3', 'SLOT 3', at(18, 19, 31), 1, 'Harbor Docks', 1, 21350, 18.0, ['elena']),
   ];
-  const hero = driveHero('supercar', 132, 120, Math.PI, 0, { body: rgb(0x27e2d2), accent: rgb(0xff3f95) });
-  const p = combat.player;
-  p.x = hero.x; p.z = hero.z; p.heading = hero.heading;
+  const hero = stageCar('supercar', 132, 120, Math.PI, 0, { color: rgb(0x27e2d2), accent: rgb(0xff3f95) });
+  progression.tuneVehicle(hero);
+  setVehicle(hero);
   police.setPeak(4);
   for (const [x, z, h] of [[-120, 4, 0.1], [250, 0, 1.5], [6, 258, -1.6], [-260, -128, 3.1], [380, 130, 1.2]]) {
-    const cop = police.spawnStagedCruiser(x, z, h);
-    cop.sirenOn = false;
+    police.spawnStagedCruiser(x, z, h).sirenOn = false;
   }
   for (let i = 0; i < 14; i += 1) {
     const pt = world.randomRoadPoint(130, 0, 20, 420, random);
@@ -583,4 +394,41 @@ function stageMenu() {
   camera.target = [60, 26, 40];
   camera.fov = 58;
   openMenu('map');
+}
+
+// ------------------------------------------------------------------ 04 · title / start screen
+/** Golden hour from above Ocean Boulevard: traffic, the beach crowd, the pier wheel, the bay. */
+function stageTitle() {
+  clearScene();
+  game.hour = 19.05;
+  missions.reset();
+  missions.state.done = missions.state.done.map((_, i) => i < 2);
+  missions.state.active = false;
+  playerOnFoot(-40, 285, 0.6);
+  combat.player.cash = 41280;
+  game.tokens.forEach((t, i) => { t.taken = i < 7; });
+  police.setPeak(4);
+  // Both directions on the boulevard, and parked cars on the promenade kerb.
+  const flow = [
+    ['coupe', 118, 254, -Math.PI / 2, 0xff8a3c], ['muscle', 214, 267, Math.PI / 2, 0x1f9e8f], ['supercar', 330, 251, -Math.PI / 2, 0xff2f86],
+    ['van', -160, 254, -Math.PI / 2, null], ['sedan', 58, 267, Math.PI / 2, 0x2f7fbf], ['taxi', 4, 252.5, -Math.PI / 2, null],
+    ['coupe', -70, 268, Math.PI / 2, 0x8f5bb8], ['sedan', 160, 253, -Math.PI / 2, 0xf1efe6], ['taxi', 262, 266.5, Math.PI / 2, null],
+    ['supercar', -110, 252, -Math.PI / 2, 0xffc24b], ['muscle', 20, 282, Math.PI / 2, 0xdf7a3a], ['coupe', 96, 282.5, Math.PI / 2, 0x5fb8c8],
+  ];
+  for (const [type, x, z, h, color] of flow) stageCar(type, x, z, h, 12, color ? { color: rgb(color) } : {});
+  for (const [x, z, h] of [[-20, 291, 1.2], [30, 293, 2.7], [96, 290, 0.4], [160, 294, 3.3], [-100, 288, 1.9], [-166, 325, 0.8], [120, 310, 2.2],
+    [64, 296, 1.6], [-60, 305, 2.9], [200, 292, 0.9], [-130, 300, 1.3], [10, 312, 2.0], [140, 238, 1.4], [70, 238.5, -1.4]]) {
+    ped(x, z, h, 'stroll');
+  }
+  game.stagedSaves = [
+    slotData('auto', 'AUTOSAVE', at(20, 22, 4), 2, 'Palm Strip', 2, 41280, 42.0, ['elena', 'mateo']),
+    slotData('1', 'SLOT 1', at(20, 21, 58), 2, 'Palm Strip', 2, 41280, 42.0, ['elena', 'mateo']),
+    slotData('2', 'SLOT 2', at(18, 19, 31), 1, 'Harbor Docks', 1, 21350, 18.0, ['elena']),
+    slotData('3', 'SLOT 3', 0, 0, 'Palm Strip', 0, 0, 0, []),
+  ];
+  // High over the eastern boulevard, looking west down Ocean Boulevard into the sun: hotels
+  // and neon on the right, the beach, the pier wheel and the bay on the left.
+  camera.pos = [250, 34, 258];
+  camera.target = [-140, 4, 310];
+  camera.fov = 56;
 }

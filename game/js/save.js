@@ -2,9 +2,17 @@
 // plus an autosave. Each slot records a name (the job in progress), district, story
 // progress, cash, crew, turf standing and a timestamp, and can be overwritten or deleted.
 // Every read is defensive (private mode, quota, corrupt JSON) and snapshots are plain data
-// so a save from an older build can be skipped safely. Nothing leaves the browser.
+// so a save from an older build can be skipped safely. Each slot also carries its act, the
+// overall completion figure and the job medals, for the title screen's and city menu's slot
+// cards. Nothing leaves the browser.
 
 import { MISSIONS } from './missions.js';
+import { ACTIVITIES } from './activities.js';
+
+// The story in three acts: jobs 01-02, 03-05 and 06-08, each with the short title a slot card shows.
+const ACTS = ['I', 'I', 'II', 'II', 'II', 'III', 'III', 'III'];
+const JOB_TITLES = ['BOARDWALK BOOST', 'HARBOR CONTRABAND', 'NEON HEIST', 'PIER AMBUSH', 'CASA HILLS HUSH',
+  'STARLIGHT KEY RUN', 'CRANE LIGHT BLACKOUT', 'THE SOLARIS VAULT'];
 
 const PREFIX = 'solarisbay.v1.';
 const SLOTS = ['auto', '1', '2', '3'];
@@ -49,6 +57,8 @@ export function createSave() {
         district: data?.district ?? 'Palm Strip',
         crew: Object.entries(data?.crew?.recruited ?? {}).filter(([, on]) => on).map(([id]) => id),
         storyComplete: !!data?.storyComplete,
+        completion: Number.isFinite(data?.completion) ? data.completion : 0,
+        act: actLabel(data?.missionIndex ?? 0, !!data?.storyComplete),
       });
     }
     return out;
@@ -109,6 +119,36 @@ export function slotTime(ms) {
   return `${d.getDate()} ${months[d.getMonth()]} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+/** "ACT II — NEON HEIST" for the job a save sits on. */
+export function actLabel(index, storyComplete = false) {
+  if (storyComplete) return 'EPILOGUE — FREE ROAM';
+  const i = Math.max(0, Math.min(MISSIONS.length - 1, index));
+  return `ACT ${ACTS[i]} — ${JOB_TITLES[i]}`;
+}
+
+/**
+ * Overall completion in percent, one decimal: story jobs 50, district standing 20, side
+ * activities cleared 15, garage upgrade stages 10 and Sun Tokens 5. The city menu's ring and
+ * every save card read this same figure.
+ */
+export function completion({ jobs = 0, turf = 0, activities = 0, upgrades = 0, tokens = 0 }) {
+  const pct = (jobs / MISSIONS.length) * 50 + (turf / 100) * 20 + (activities / ACTIVITIES.length) * 15
+    + (upgrades / 12) * 10 + (tokens / 12) * 5;
+  return Math.round(Math.min(100, pct) * 10) / 10;
+}
+
+/** Completion read from the live systems. */
+export function completionOf(game) {
+  const ups = game.progression?.state.upgrades ?? {};
+  return completion({
+    jobs: game.missions.progress,
+    turf: game.turf?.overall() ?? 0,
+    activities: ACTIVITIES.filter((a) => (game.activities?.state.completed[a.id] ?? 0) > 0).length,
+    upgrades: Object.values(ups).reduce((n, v) => n + v, 0),
+    tokens: game.tokens.filter((t) => t.taken).length,
+  });
+}
+
 /** The name a slot gets: the job in progress, or the next one up. */
 function slotName(game) {
   const m = game.missions;
@@ -133,6 +173,8 @@ export function snapshot(game) {
     progress: game.missions.progress,
     storyComplete: game.missions.state.storyComplete,
     done: game.missions.state.done.slice(),
+    ratings: game.missions.state.ratings.slice(),
+    completion: completionOf(game),
     player: { x: p.inVehicle ? p.inVehicle.x : p.x, z: p.inVehicle ? p.inVehicle.z : p.z, onFoot: !p.inVehicle },
     district: game.world.districtName(p.x, p.z),
     tokens: game.tokens.filter((t) => t.taken).length,
@@ -156,7 +198,7 @@ export function applySnapshot(game, data) {
   p.health = Number.isFinite(data.health) ? data.health : 100;
   p.armor = Number.isFinite(data.armor) ? data.armor : 0;
   p.weaponSlot = Number.isFinite(data.weaponSlot) ? data.weaponSlot : 2;
-  if (Array.isArray(data.weapons)) p.weapons = data.weapons.filter((id) => ['fists', 'pistol', 'smg', 'shotgun'].includes(id));
+  if (Array.isArray(data.weapons)) p.weapons = data.weapons.filter((id) => ['fists', 'pistol', 'smg', 'shotgun', 'carbine'].includes(id));
   if (data.ammo) {
     for (const id of Object.keys(p.ammo)) {
       if (data.ammo[id]) {
@@ -167,6 +209,7 @@ export function applySnapshot(game, data) {
   }
   if (Array.isArray(data.done)) game.missions.state.done = MISSIONS.map((_, i) => !!data.done[i]);
   game.missions.state.done = game.missions.state.done.map(Boolean);
+  game.missions.state.ratings = MISSIONS.map((_, i) => (['G', 'S', 'B'].includes(data.ratings?.[i]) ? data.ratings[i] : null));
   game.missions.state.storyComplete = !!data.storyComplete;
   game.missions.state.active = false;
   game.missions.state.step = -1;
@@ -188,6 +231,7 @@ export function applySnapshot(game, data) {
   game.combat.clearEnemies();
   if (data.weapons?.includes('smg')) game.combat.giveWeapon('smg');
   if (data.weapons?.includes('shotgun')) game.combat.giveWeapon('shotgun');
+  if (data.weapons?.includes('carbine')) game.combat.giveWeapon('carbine');
   if (Number.isFinite(data.radio)) game.audio.setRadio(data.radio);
   game.progression?.restore(data.progression);
   game.activities?.restore(data.activities);

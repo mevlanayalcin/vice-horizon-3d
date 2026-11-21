@@ -1,3 +1,4 @@
+// Solaris Bay v10 module: daycycle (golden-hour & neon-night lighting).
 // daycycle.js — Solaris Bay's clock. Blends the sky presets in config.js into one
 // lighting environment for any hour (dawn, high sun, golden hour, sunset, neon night),
 // and names the hour for the HUD clock chip. Pure functions: no state, no DOM.

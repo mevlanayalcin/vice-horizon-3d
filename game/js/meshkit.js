@@ -1,3 +1,4 @@
+// Solaris Bay v10 module: meshkit (procedural WebGL2 vehicle & tower geometry).
 // meshkit.js — SOLARIS BAY's geometry toolkit. MeshBuilder writes interleaved
 // triangles for the WebGL2 renderer (11 floats a vertex: position, normal, colour,
 // emissive 0..1 and a material channel). The material channel is the palm sway weight

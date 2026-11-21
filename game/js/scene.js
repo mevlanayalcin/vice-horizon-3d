@@ -1,3 +1,4 @@
+// Solaris Bay v10 module: scene (Solaris Bay frame assembly & entities).
 // scene.js — the per-frame dynamic scene. Everything that moves is rebuilt into one
 // mesh each frame: cars with their light halos and contact shadows, pedestrians, the
 // player and gangs with tracers and sparks, mission crates, sun tokens, pickups, the

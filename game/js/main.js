@@ -4,18 +4,19 @@
 // Imports are listed gameplay first: missions (eight-job story), police (five-star SBPD),
 // crew (Elena and Mateo), turf (district standing), save (three slots + autosave),
 // progression (ranks, garage, Paint Shop), activities (races, courier, cab, ramps),
-// citymenu (M / Tab map and menu) and combat (four weapons, Q / C cover); then cars,
-// traffic, sound, HUD and the renderer. Imported last: streetprops.js (hydrants and
-// lampposts) and stage_glue.js (title and pause menus, photo mode, test hooks).
+// citymenu (M / Tab map, completion ring, saves) and combat (five weapons, Q / C cover);
+// then cars, traffic, sound, HUD and the renderer. Imported last: streetprops.js (hydrants
+// and lampposts) and stage_glue.js (title and pause menus, photo mode, test hooks).
 // Controls: WASD move or drive · mouse aim, LMB fire · E / F steal or leave a car · Space jump /
-// handbrake · Shift sprint / nitro · Q / C cover · 1-4 weapons · X reload · T crew · R radio ·
-// H horn · M / Tab city menu · Esc or P pause to save and load.
+// handbrake · Shift sprint / nitro · Q / C cover · 1-5 weapons · R reload on foot, radio in a
+// car · Z / X / C crew abilities (JAM DISPATCH, FIELD PATCH, NITRO SURGE; on foot C is cover)
+// · T Mateo · H horn · M / Tab city menu · Esc or P pause to save and load.
 
 import { createMissions, MISSIONS } from './missions.js';
 import { createPolice } from './police.js';
 import { createCrew } from './crew.js';
 import { createTurf } from './turf.js';
-import { createSave, snapshot } from './save.js';
+import { createSave, snapshot, completionOf } from './save.js';
 import { createProgression } from './progression.js';
 import { createActivities } from './activities.js';
 import { createCityMenu } from './citymenu.js';
@@ -116,6 +117,7 @@ const bus = {
   },
   onCarHurt: () => hud.flashDamage(),
   onWeapon: (weapon) => { hud.notify(weapon.name.toUpperCase(), 'info', 1500); sfx('playUI'); },
+  onAbility: (def) => { sfx('playUI'); if (def.id === 'jam') sfx('playDispatch'); else if (def.id === 'patch') sfx('playPickup', 'health'); },
   onCrate: () => sfx('playPickup', 'cash'),
   pickup: (x, y, z, color) => {
     for (let i = 0; i < 8; i += 1) {
@@ -158,12 +160,13 @@ const missions = createMissions({ world, combat, police, bus, turf });
 const progression = createProgression({ combat, bus, turf });
 const activities = createActivities({ combat, bus, progression, turf });
 const cityMenu = createCityMenu({
-  painter: hud.painter, missions, activities, progression, combat, police, crew, turf,
+  painter: hud.painter, portrait: hud.portrait, missions, activities, progression, combat, police, crew, turf,
   saves: () => ({ list: game.stagedSaves ?? save.list(), active: glue.activeSlot, time: glue.slotTime }),
+  completion: () => game.stagedCompletion ?? completionOf(game),
 });
 const game = {
   renderer, world, audio, combat, traffic, police, missions, activities, progression, hud, save, crew, turf,
-  tokens, pickups, hour: 19.05, playTime: 0,
+  tokens, pickups, hour: 19.05, playTime: 0, mouseScale: 1,
   get cash() { return combat.player.cash; },
 };
 
@@ -235,6 +238,11 @@ function closeCityMenu() {
   if (mode !== 'menu') return;
   mode = 'playing';
   cityMenu.hide();
+}
+
+/** What the HUD's SBPD table and wanted pill read: the live roster and who can see the suspect. */
+function policeInfo() {
+  return { units: police.getDispatchUnits(), inSight: police.inSight, airLocked: police.airLocked, jammed: police.jammed, label: police.label };
 }
 
 /** Everything the minimap and the city map draw, read from the live systems. */
@@ -324,8 +332,8 @@ function promptForPlayer() {
 // ---------------------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------------------
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyF', 'KeyR', 'KeyX', 'KeyH', 'KeyP', 'KeyQ', 'KeyC', 'KeyT',
-  'ShiftLeft', 'ShiftRight', 'Space', 'Escape', 'Tab', 'KeyM', 'Digit1', 'Digit2', 'Digit3', 'Digit4',
+const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyF', 'KeyR', 'KeyX', 'KeyZ', 'KeyH', 'KeyP', 'KeyQ', 'KeyC', 'KeyT',
+  'ShiftLeft', 'ShiftRight', 'Space', 'Escape', 'Tab', 'KeyM', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5',
   'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
 
 window.addEventListener('keydown', (event) => {
@@ -358,11 +366,19 @@ window.addEventListener('keydown', (event) => {
   if (mode === 'title' && code === 'Space') glue.newGame(true);
   if (mode !== 'playing' || isShot) return;
 
-  if (code === 'KeyR') {
+  if (code === 'KeyR' && !currentVehicle) {
+    combat.reload();
+  } else if (code === 'KeyR') {
     audio.nextStation();
     const st = audio.currentStation();
     hud.setRadio(st?.name ?? null);
     hud.notify(st ? `${st.name} · ${st.genre}` : 'Radio off', 'mission', 2400);
+  } else if (code === 'KeyZ') {
+    crew.useAbility('jam');
+  } else if (code === 'KeyX') {
+    crew.useAbility('patch');
+  } else if (code === 'KeyC' && currentVehicle) {
+    crew.useAbility('nitro');
   } else if (code === 'KeyE' || code === 'KeyF') {
     if (currentVehicle) exitVehicle();
     else {
@@ -370,15 +386,13 @@ window.addEventListener('keydown', (event) => {
       if (near) enterVehicle(near);
       else hud.notify('No vehicle within reach', 'warn', 1600);
     }
-  } else if (code === 'KeyX') {
-    if (!currentVehicle) combat.reload();
   } else if (code === 'KeyQ' || code === 'KeyC') {
     if (!currentVehicle) combat.toggleCover();
   } else if (code === 'KeyT') {
     crew.toggle('mateo');
   } else if (code === 'KeyH') {
     if (currentVehicle) sfx('playHorn');
-  } else if (/^Digit[1-4]$/.test(code)) {
+  } else if (/^Digit[1-5]$/.test(code)) {
     if (!currentVehicle) combat.switchWeapon(Number(code.slice(-1)));
   }
 });
@@ -404,11 +418,11 @@ window.addEventListener('mousemove', (event) => {
   if (document.pointerLockElement !== canvas && !aimDown && !mouseDown) return;
   const dx = event.movementX ?? 0, dy = event.movementY ?? 0;
   if (currentVehicle) {
-    rig.offsetYaw = clamp(rig.offsetYaw - dx * 0.0026, -2.2, 2.2);
-    rig.pitch = clamp(rig.pitch + dy * 0.0016, -0.15, 0.55);
+    rig.offsetYaw = clamp(rig.offsetYaw - dx * 0.0026 * game.mouseScale, -2.2, 2.2);
+    rig.pitch = clamp(rig.pitch + dy * 0.0016 * game.mouseScale, -0.15, 0.55);
   } else {
-    rig.yaw -= dx * 0.0031;
-    rig.pitch = clamp(rig.pitch + dy * 0.0022, -0.34, 0.92);
+    rig.yaw -= dx * 0.0031 * game.mouseScale;
+    rig.pitch = clamp(rig.pitch + dy * 0.0022 * game.mouseScale, -0.34, 0.92);
   }
 });
 window.addEventListener('resize', () => renderer.resize());
@@ -429,7 +443,7 @@ function driveStep(car, dt) {
     throttle: (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0),
     steer: (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0),
     handbrake: keys.has('Space'),
-    boost: held('ShiftLeft', 'ShiftRight'),
+    boost: held('ShiftLeft', 'ShiftRight') || crew.surging,
   }, dt, world);
   for (const ev of events) {
     if (ev === 'crash' || ev === 'crashHard') { sfx('playCrash', ev === 'crashHard' ? 1.1 : 0.6); rig.shake = 0.35; }
@@ -538,10 +552,10 @@ function updateGame(dt) {
     fire: foot && mouseDown,
     firePressed: foot && pressedKeys.has('Mouse0'),
     aim: foot && (aimDown || mouseDown),
-    reloadPressed: foot && pressedKeys.has('KeyX'),
+    reloadPressed: false, // R reloads through combat.reload() in the key handler
     switchWeapon: 0,
   };
-  for (let i = 1; i <= 4; i += 1) if (pressedKeys.has(`Digit${i}`)) input.switchWeapon = i;
+  for (let i = 1; i <= 5; i += 1) if (pressedKeys.has(`Digit${i}`)) input.switchWeapon = i;
   combat.update(dt, input, rig.yaw, { aim: input.aim });
   pressedKeys.clear();
   crew.update(dt);
@@ -596,6 +610,8 @@ function updateGame(dt) {
     missionProgress: missions.progress,
     activity: activities.hudInfo(),
     crew: crew.roster(),
+    abilities: crew.abilities(),
+    police: policeInfo(),
     tokens: tokens.filter((t) => t.taken).length,
     city: cityProgress(),
     envName: envAtHour(game.hour).name,
@@ -665,7 +681,7 @@ const glue = createStageGlue({
   set deathHandled(v) { deathHandled = v; },
   set stageCity(v) { stageCity = v; },
   get mouse() { return { mouseDown, aimDown }; },
-  initAudioOnce, openCityMenu, closeCityMenu, liveMapState, cityProgress, findVehicleNear, enterVehicle,
+  initAudioOnce, openCityMenu, closeCityMenu, liveMapState, policeInfo, cityProgress, findVehicleNear, enterVehicle,
   updateGame, updateCamera, renderFrame,
 });
 window.addEventListener('load', () => renderer.resize());

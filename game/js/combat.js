@@ -1,6 +1,6 @@
 // combat.js — the player on foot: WASD movement relative to the camera, sprint, jump,
 // punch, Q / C tactical low cover behind cars, bollards and barricades (less incoming
-// damage, steadier peek-and-fire aim), and four weapons with magazine/reload state.
+// damage, steadier peek-and-fire aim), and five weapons with magazine/reload state.
 // Hitscan tracers, muzzle flashes, sparks, blood, enemy goons and police officers.
 // buildCharacter() is the shared low-poly person used by pedestrians, crew and NPCs too.
 
@@ -229,7 +229,7 @@ export function buildCharacter(b, c, time = 0) {
     arm(shoulderL, W(lx, shoulderY - 0.16, lz), W(sx, handY - 0.03, sz));
     if (weapon) {
       // Original low-poly hardware: dark receiver, coloured energy cell.
-      const gunLength = weapon === 'shotgun' ? 0.95 : weapon === 'smg' ? 0.62 : 0.42;
+      const gunLength = weapon === 'shotgun' ? 0.95 : weapon === 'carbine' ? 0.84 : weapon === 'smg' ? 0.62 : 0.42;
       const gunYaw = -aim;
       const [gx0, gz0] = local(0.02, 0.62 * k);
       const g = W(gx0, handY + 0.04, gz0);
@@ -303,6 +303,7 @@ export function createCombat(world, bus) {
       pistol: { mag: 12, reserve: 96 },
       smg: { mag: 30, reserve: 180 },
       shotgun: { mag: 6, reserve: 36 },
+      carbine: { mag: 24, reserve: 120 },
     },
     fireCooldown: 0,
     reloadTimer: 0,

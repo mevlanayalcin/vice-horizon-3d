@@ -1,11 +1,11 @@
-// SOLARIS BAY — a gta6-01 entry (Node 22, standard library only). Build v9.
+// SOLARIS BAY — a gta6-01 entry (Node 22, standard library only). Build v10.
 //
 // The game itself is this directory's game/ folder: plain static files a desktop browser
-// serves offline — game/index.html, one stylesheet and twenty-eight authored ES modules
+// serves offline — game/index.html, one stylesheet and twenty-nine authored ES modules
 // under game/js/. main.js imports the gameplay systems first (missions, police, crew, turf,
 // save, progression, activities, citymenu, combat), then vehicles, config, camera, traffic,
-// audio, hud (with minimap), daycycle, scene, renderer3d (with postfx), world, and last
-// streetprops and stage_glue (title and pause menus, screens, photo mode via shotstage).
+// audio, hud (with minimap and portraits), daycycle, scene, renderer3d (with postfx), world,
+// and last streetprops and stage_glue (title and pause screens, photo mode via shotstage).
 // No library, no build step and no network request: the city, every car, character, sign,
 // shader and sound is generated in code.
 //

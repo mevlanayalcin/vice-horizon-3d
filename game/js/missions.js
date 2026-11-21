@@ -144,6 +144,8 @@ export function createMissions({ world, combat, police, bus, turf }) {
     crates: [],
     stepEnemies: [],
     results: [],
+    // One medal per finished job (G / S / B), rated on the health and armour left at the finish.
+    ratings: MISSIONS.map(() => null),
     startingSoon: false,
     hack: 0,
   };
@@ -169,6 +171,7 @@ export function createMissions({ world, combat, police, bus, turf }) {
     state.crates = [];
     state.stepEnemies = [];
     state.results = [];
+    state.ratings = MISSIONS.map(() => null);
     state.startingSoon = false;
     combat.clearEnemies();
   }
@@ -261,6 +264,9 @@ export function createMissions({ world, combat, police, bus, turf }) {
     if (turf && m.district) turf.add(m.district, m.turf ?? 15, `JOB ${m.code}`);
     if (state.index === 0) combat.giveWeapon('smg');
     if (state.index === 1) combat.giveWeapon('shotgun');
+    if (state.index === 2) combat.giveWeapon('carbine');
+    const grade = (p.health + p.armor * 0.5) / p.maxHealth;
+    state.ratings[state.index] = grade >= 0.8 ? 'G' : grade >= 0.5 ? 'S' : 'B';
     if (state.index === 3 || state.index === 5) {
       p.health = Math.min(p.maxHealth, p.health + 40);
     }

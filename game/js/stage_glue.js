@@ -1,5 +1,6 @@
-// stage_glue.js — everything around the game loop that is not the game: the title, pause,
-// load and story-complete screens and their buttons, photo mode (`?shot=<name>`, staged by
+// stage_glue.js — everything around the game loop that is not the game: the title (with its
+// live save-slot cards), Controls & Settings, pause, load and story-complete screens and
+// their buttons, the clickable crew ability cards, photo mode (`?shot=<name>`, staged by
 // shotstage.js and fed the same HUD state a live frame gets) and window.__solaris, the
 // read-only surface the automated checks drive. main.js hands in `app`: its systems plus
 // live getters and setters for the state it owns (mode, the car being driven).
@@ -110,20 +111,22 @@ export function createStageGlue(app) {
     refreshTitle();
   }
 
+  /** Title stats, CONTINUE / LOAD GAME labels and the three save cards (staged in photo mode). */
   function refreshTitle() {
-    const slots = save.list();
-    const latest = save.latest();
+    const slots = game.stagedSaves ?? save.list();
+    const newest = slots.filter((s) => s.exists).sort((a, b) => b.savedAt - a.savedAt)[0];
     hud.setTitle({
       progress: missions.progress,
       total: MISSIONS.length,
       cash: combat.player.cash,
       tokens: tokens.filter((t) => t.taken).length,
       peak: Math.max(police.peak, police.wanted),
-      hasSave: slots.some((s) => s.exists) || (app.mode === 'title' && isShot),
-      slotsUsed: slots.filter((s) => s.exists).length,
-      saveLabel: latest ? `MISSION ${String(Math.min(MISSIONS.length, (latest.progress ?? 0) + 1)).padStart(2, '0')} · $${(latest.cash ?? 0).toLocaleString('en-US')}` : 'LATEST SAVE',
+      hasSave: !!newest,
+      slotsUsed: slots.filter((s) => s.exists && s.slot !== 'auto').length,
+      saveLabel: newest ? `${newest.label} · ${newest.act.split(' — ')[0]} · ${Math.round(newest.completion ?? 0)}%` : 'LATEST SAVE',
       storyComplete: missions.state.storyComplete,
     });
+    hud.setTitleSlots(slots, slotTime);
   }
 
   function refreshPauseSlots() {
@@ -195,6 +198,21 @@ export function createStageGlue(app) {
         hud.setSoundLabel(!audio.muted);
         hud.notify(audio.muted ? 'Sound muted' : 'Sound on', 'info', 1800);
         break;
+      case 'toggleFx': {
+        const off = document.body.classList.toggle('no-fx');
+        hud.setSetting('fx', off ? 'OFF' : 'ON');
+        break;
+      }
+      case 'mouseSpeed': {
+        const steps = [[0.6, 'SLOW'], [1, 'NORMAL'], [1.5, 'FAST']];
+        const next = steps[(steps.findIndex(([v]) => v === game.mouseScale) + 1) % steps.length];
+        game.mouseScale = next[0];
+        hud.setSetting('mouse', next[1]);
+        break;
+      }
+      case 'ability':
+        if (app.mode === 'playing') crew.useAbility(data.ability);
+        break;
       case 'saveSlot':
         if (save.write(data.slot, snapshot(game))) {
           activeSlot = data.slot;
@@ -262,6 +280,8 @@ export function createStageGlue(app) {
       tokens: tokens.filter((t) => t.taken).length,
       city: app.cityProgress(),
       crew: crew.roster(),
+      abilities: crew.abilities(),
+      police: app.policeInfo(),
     });
     hud.setPlaying(shotName !== 'title', !!app.vehicle);
     if (cityMenu.open) cityMenu.render(app.liveMapState());
@@ -316,6 +336,14 @@ export function createStageGlue(app) {
         barriers: police.roadblocks.reduce((n, b) => n + b.barriers.length, 0),
         flares: police.roadblocks.reduce((n, b) => n + b.flares.length, 0),
         dispatch: hud.els.dispatch.classList.contains('show') ? hud.els.dispatchTitle.textContent : null,
+        dispatchUnits: police.getDispatchUnits(),
+        dispatchTable: hud.els.dispatchTable.classList.contains('hidden') ? null : [...hud.els.dtRows.children].filter((r) => !r.classList.contains('hidden')).map((r) => r.textContent.trim()),
+        abilities: crew.abilities().map((a) => ({ id: a.id, ready: a.ready, cooldown: a.cooldownLeft, running: a.running, status: a.status })),
+        jammed: police.jammed,
+        inSight: police.inSight,
+        weapons: combat.player.weapons.slice(),
+        weaponSlot: combat.player.weaponSlot,
+        armor: p.armor,
         hack: missions.state.hack,
         cash: p.cash,
         wanted: police.wanted,
@@ -375,6 +403,7 @@ export function createStageGlue(app) {
       app.updateCamera(0.016);
     },
     raise(n = 3) { police.raise(n, 'debug'); },
+    ability(id) { return crew.useAbility(id); },
     spawnCop() { police.spawnCruiser(null, 30); },
     teleport(x, z) {
       const p = combat.player;

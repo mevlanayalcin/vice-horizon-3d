@@ -1,3 +1,4 @@
+// Solaris Bay v10 module: postfx (planar wet-road reflections & sunset bloom).
 // postfx.js — SOLARIS BAY's cinematic post-processing chain, pure WebGL2.
 // The world renders into a multisampled HDR target (RGBA16F where the GPU can render
 // floats, RGBA8 otherwise); this module resolves it, pulls a soft-threshold bright pass,

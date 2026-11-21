@@ -245,6 +245,11 @@ export const WEAPONS = [
     damage: 11, rate: 0.78, range: 55, mag: 6, reserve: 36, spread: 0.085, pellets: 7,
     color: '#ff9a5c', unlock: 2,
   },
+  {
+    id: 'carbine', slot: 5, name: 'Causeway Carbine', short: 'CARBINE', auto: true,
+    damage: 21, rate: 0.12, range: 140, mag: 24, reserve: 120, spread: 0.016, pellets: 1,
+    color: '#b8ff7a', unlock: 3,
+  },
 ];
 
 // ---------------------------------------------------------------------------
