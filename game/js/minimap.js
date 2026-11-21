@@ -502,7 +502,7 @@ export function createMapPainter(world) {
       g.stroke();
       g.globalAlpha = 1;
       pin(g, wx, wy, opts.badge * 1.05, gpsColor, wp.escape ? 'S' : wp.activity ? '!' : '★');
-      if (opts.names && wp.label) label(g, shorten(String(wp.label).toUpperCase(), 30), wx, wy - opts.badge * 3.2, 12, gpsColor);
+      if (opts.names && wp.label) label(g, shorten(String(wp.label).toUpperCase(), 30), wx, wy + opts.badge * 2.6, 11, gpsColor);
     }
 
     if (player) {
@@ -646,7 +646,7 @@ export function createMapPainter(world) {
       }
     }
     for (const lm of map.landmarks ?? []) {
-      if (DISTRICTS.some((d) => d.name === lm.name)) continue;
+      if (DISTRICTS.some((d) => d.name === lm.name) || lm.name === 'Safehouse' || lm.name === 'Solaris Vault Plaza') continue;
       const [lx, ly] = project(lm.x, lm.z);
       g.save();
       g.translate(lx, ly);

@@ -162,6 +162,9 @@ export function createMissions({ world, combat, police, bus, turf }) {
   }
 
   function reset() {
+    for (const m of MISSIONS) {
+      for (const s of m.steps) delete s.car;
+    }
     state.index = 0;
     state.step = -1;
     state.active = false;
@@ -176,6 +179,21 @@ export function createMissions({ world, combat, police, bus, turf }) {
     combat.clearEnemies();
   }
 
+  function ensureStealCar(s) {
+    const pos = s.carPos ?? s.pos;
+    if (!pos) return null;
+    const near = bus.findVehicleNear?.(pos[0], pos[1], 10);
+    let car = near && !near.wrecked && !near.police ? near : null;
+    if (!car && s.carPos && bus.spawnMissionCar) {
+      car = bus.spawnMissionCar('coupe', s.carPos[0], s.carPos[1], Math.PI / 2);
+    }
+    if (car) {
+      car.mission = true;
+      s.car = car;
+    }
+    return car;
+  }
+
   function startMission(index = state.index, announce = true) {
     if (index < 0 || index >= MISSIONS.length) return;
     state.index = index;
@@ -187,6 +205,10 @@ export function createMissions({ world, combat, police, bus, turf }) {
     state.crates = [];
     state.stepEnemies = [];
     const m = mission();
+    for (const s of m.steps) {
+      delete s.car;
+      if (s.type === 'steal' && s.carPos) ensureStealCar(s);
+    }
     if (announce) {
       bus.missionBanner?.(m, 'MISSION START');
       bus.dialogue?.(m.giver, m.dialogue);
@@ -211,11 +233,7 @@ export function createMissions({ world, combat, police, bus, turf }) {
       state.crates = s.crates.map(([x, z], i) => ({ x, z, y: 0.4, taken: false, phase: i * 1.3, big: !!s.crates && s.crates.length === 1 && (state.index >= 3) }));
     }
     if (s.type === 'steal') {
-      const car = bus.findVehicleNear?.(s.pos[0], s.pos[1], 10);
-      if (car) {
-        car.mission = true;
-        s.car = car;
-      }
+      ensureStealCar(s);
     }
     if (s.type === 'kill') {
       state.stepEnemies = [];
@@ -260,7 +278,8 @@ export function createMissions({ world, combat, police, bus, turf }) {
     state.results.push({ index: state.index, name: m.name, reward: m.reward });
     const p = combat.player;
     p.cash += m.reward;
-    p.respect += 160;
+    if (bus.addRespect) bus.addRespect(160);
+    else p.respect += 160;
     if (turf && m.district) turf.add(m.district, m.turf ?? 15, `JOB ${m.code}`);
     if (state.index === 0) combat.giveWeapon('smg');
     if (state.index === 1) combat.giveWeapon('shotgun');
@@ -327,6 +346,7 @@ export function createMissions({ world, combat, police, bus, turf }) {
     if (!m || !s) return;
     state.stepTimer += dt;
     const p = combat.player;
+    if (p.dead) return;
     const playerPos = p.inVehicle ? [p.inVehicle.x, p.inVehicle.z] : [p.x, p.z];
     // 'escape' steps have no marker of their own: the waypoint points at the safehouse.
     const hasTarget = Array.isArray(s.pos);
@@ -347,14 +367,15 @@ export function createMissions({ world, combat, police, bus, turf }) {
         bus.notifyOnce?.('You need a car to make this delivery', 'warn', 4);
       }
     } else if (s.type === 'steal') {
-      const car = s.car ?? bus.findVehicleNear?.(s.pos[0], s.pos[1], 12);
-      if (car && p.inVehicle === car) {
+      if (s.car && (s.car.wrecked || s.car.removed)) delete s.car;
+      const car = s.car ?? ensureStealCar(s);
+      if (car && !car.wrecked && p.inVehicle === car) {
         police.raise(2, 'Car theft');
         bus.notify?.('Car theft · 2 stars', 'wanted');
         bus.dialogue?.('ELENA', 'That\'s the one. Now move before the Strip wakes up.');
         car.mission = true;
         advance();
-      } else if (car && !car.mission) {
+      } else if (car && !car.wrecked && !car.mission) {
         car.mission = true;
         s.car = car;
       }

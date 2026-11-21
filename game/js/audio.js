@@ -496,6 +496,7 @@ export function createAudio() {
     if (!ready) return;
     if (ctx.state === 'suspended') return;
     const now = ctx.currentTime;
+    if (nextNote < now - 0.25) nextNote = now + 0.05;
     if (station > 0) scheduleStation(now);
 
     // Engine: revs climb through each gear band and drop at the shift.

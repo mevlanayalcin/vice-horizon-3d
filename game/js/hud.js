@@ -327,7 +327,7 @@ export function createHud({ onAction, world }) {
     setText(els.titleSlotsMeta, `${manual.filter((s) => s.exists).length} / ${manual.length} USED`);
     els.titleCards.innerHTML = manual.map((s) => {
       if (!s.exists) {
-        return `<div class="tcard empty" data-action="new" role="button"><div class="tc-head"><span class="tc-slot">${s.label}</span><span class="tc-tag">EMPTY</span></div>
+        return `<div class="tcard empty" aria-disabled="true"><div class="tc-head"><span class="tc-slot">${s.label}</span><span class="tc-tag">EMPTY</span></div>
           <div class="tc-empty"><span class="tc-plus">+</span><span>No save here yet. Start a new game, then save to ${s.label.toLowerCase()} from the pause menu or the city map.</span></div></div>`;
       }
       const pct = Math.max(0, Math.min(100, s.completion ?? 0));
@@ -349,7 +349,10 @@ export function createHud({ onAction, world }) {
     els.pause.classList.add('hidden');
     if (!show) els.slotsScreen?.classList.add('hidden');
   }
-  const showControls = (show = true) => els.controls.classList.toggle('hidden', !show);
+  const showControls = (show = true) => {
+    els.controls.classList.toggle('hidden', !show);
+    if (!show && document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  };
   function showPause(show = true) {
     els.pause.classList.toggle('hidden', !show);
     if (!show) els.controls.classList.add('hidden');

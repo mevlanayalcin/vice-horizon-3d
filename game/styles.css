@@ -1,5 +1,5 @@
-/* SOLARIS BAY — interface styling, v10. Everything is drawn with CSS and inline SVG: no
-   images, no fetched fonts, no network. Vice-sunset Art Deco: deep ocean glass panels with
+/* SOLARIS BAY — interface styling, v11. Everything is drawn with CSS and inline SVG: no
+   images, no fetched fonts, no network. Solaris-sunset Art Deco: deep ocean glass panels with
    a gold hairline, coral-to-magenta sunset accents and Bay Cyan for the crew and cover.
    Laid out for 1280 x 720 first: corner clusters around a clear centre, no overlaps. */
 
@@ -66,7 +66,7 @@ body.no-fx #speedLines, body.no-fx #damageFlash { display: none; }
 }
 
 /* ------------------------------------------------------------------ top-left: SBPD response */
-.hud-top-left { position: fixed; top: 14px; left: 16px; width: 300px; display: flex; flex-direction: column; gap: 7px; }
+.hud-top-left { position: fixed; top: 14px; left: 16px; width: 332px; display: flex; flex-direction: column; gap: 7px; }
 .dispatch-table {
   padding: 8px 10px 7px; border-color: rgba(255, 76, 95, 0.42);
   background: linear-gradient(150deg, rgba(24, 8, 16, 0.9), rgba(10, 14, 28, 0.74));

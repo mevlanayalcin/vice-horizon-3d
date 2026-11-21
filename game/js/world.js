@@ -1491,7 +1491,7 @@ export function createWorld(renderer) {
     for (const [x, z, heading, type] of parking) parked.push({ x, z, heading, type });
     // Sun-token collectibles around the districts.
     const tokenSpots = [
-      [-166, 344], [-166, 432], [118, 312], [-90, 320], [65, -20], [-330, -300],
+      [-166, 344], [-166, 432], [118, 318], [-90, 316], [65, -20], [-330, -268],
       [640, 200], [600, 130], [-70, 330], [352, 290], [0, -430], [436, 200],
     ];
     for (const [x, z] of tokenSpots) tokens.push({ x, z, y: 1.3, taken: false, phase: rng() * Math.PI * 2 });

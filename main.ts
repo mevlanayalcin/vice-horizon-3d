@@ -1,4 +1,4 @@
-// SOLARIS BAY — a gta6-01 entry (Node 22, standard library only). Build v10.
+// SOLARIS BAY — a gta6-01 entry (Node 22, standard library only). Build v11.
 //
 // The game itself is this directory's game/ folder: plain static files a desktop browser
 // serves offline — game/index.html, one stylesheet and twenty-nine authored ES modules

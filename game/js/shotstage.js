@@ -87,11 +87,11 @@ function ped(x, z, heading, mode = 'stroll', style = 'civ') {
   return p;
 }
 
-/** A mid-story criminal: cash, respect and the full five-slot weapon rail. */
-function careerPlayer({ cash, respect, health = 100, armor = 40, slot = 3, mag = 24 }) {
+/** A mid-story criminal: cash, respect and unlocked weapons on the five-slot rail. */
+function careerPlayer({ cash, respect, health = 100, armor = 40, slot = 3, mag = 24, weapons = ['fists', 'pistol', 'smg', 'shotgun', 'carbine'] }) {
   const p = combat.player;
   Object.assign(p, { cash, respect, health, armor, weaponSlot: slot, dead: false, reloadTimer: 0 });
-  p.weapons = ['fists', 'pistol', 'smg', 'shotgun', 'carbine'];
+  p.weapons = weapons;
   Object.assign(p.ammo.pistol, { mag: 9, reserve: 84 });
   Object.assign(p.ammo.smg, { mag, reserve: 180 });
   Object.assign(p.ammo.shotgun, { mag: 6, reserve: 30 });
@@ -202,7 +202,7 @@ function stageChase() {
   setStageCity({ districts: 4, tokens: 7, safehouse: true, missions: 2 });
   missions.stage(2, 2, { banner: 'ACTIVE MISSION', done: 2 });
   hud.els.banner.classList.remove('show');
-  careerPlayer({ cash: 41280, respect: 760, health: 74, armor: 30, slot: 3, mag: 19 });
+  careerPlayer({ cash: 41280, respect: 760, health: 74, armor: 30, slot: 3, mag: 19, weapons: ['fists', 'pistol', 'smg', 'shotgun'] });
   stageCareer(2, { palm: 72, harbor: 46, midtown: 38, hills: 14, key: 6 });
   crew.mateo.status = 'RIDING SHOTGUN';
   stageAbilities({ patch: 14, nitro: 21.4 }, { nitro: 2.6 });
@@ -271,11 +271,11 @@ function stageChase() {
 /** Neon twilight: the player low behind the teal Coastal Muscle, Mateo off its nose, guards dug in. */
 function stageFoot() {
   clearScene();
-  game.hour = 19.72;
+  game.hour = 18.8;
   setStageCity({ districts: 4, tokens: 7, safehouse: true, missions: 2 });
   missions.stage(2, 1, { banner: 'ACTIVE MISSION', done: 2 });
   hud.els.banner.classList.remove('show');
-  careerPlayer({ cash: 31640, respect: 760, health: 81, armor: 55, slot: 3, mag: 22 });
+  careerPlayer({ cash: 31640, respect: 760, health: 81, armor: 55, slot: 3, mag: 22, weapons: ['fists', 'pistol', 'smg', 'shotgun'] });
   stageCareer(2, { palm: 72, harbor: 46, midtown: 38, hills: 14, key: 6 });
   stageAbilities({ jam: 27 });
   const p = combat.player;
@@ -305,7 +305,7 @@ function stageFoot() {
   p.aimYaw = yaw;
   p.heading = yaw + 0.2;
   // Mateo kneeling off the nose in his plate carrier, laying cyan covering bursts.
-  const mx = 69.4, mz = -0.3;
+  const mx = 67.9, mz = -0.3;
   const myaw = Math.atan2(82.2 - mx, -14.2 - mz);
   crew.stageMateo({ x: mx, z: mz, heading: myaw, aimYaw: myaw, crouch: 0.62, status: 'COVERING FIRE' });
   shot(mx, mz, 82.0, -14.6, 1.0, 1.3, rgb(0x9ff3ff), 0.38, { flashSize: 0.58 });
@@ -363,7 +363,7 @@ function stageMenu() {
   progression.state.upgrades = { engine: 2, nitro: 2, armor: 1, grip: 1 };
   progression.state.stored = ['coupe', 'muscle', 'taxi', 'sedan'];
   Object.assign(progression.state.stats, { stolen: 23, stunts: 5, evaded: 9, activities: 6, takedowns: 31 });
-  activities.state.best = { sprint: 38.4, courier: 61.2, circuit: 30.9, fares: 88.0 };
+  activities.state.best = { sprint: 38.4, courier: 61.2, circuit: 30.9, fares: 52.4 };
   activities.state.completed = { sprint: 2, courier: 1, circuit: 1, fares: 1 };
   activities.state.streak = 3;
   activities.state.bestStreak = 3;
@@ -421,8 +421,8 @@ function stageTitle() {
     ped(x, z, h, 'stroll');
   }
   game.stagedSaves = [
-    slotData('auto', 'AUTOSAVE', at(20, 22, 4), 2, 'Palm Strip', 2, 41280, 42.0, ['elena', 'mateo']),
-    slotData('1', 'SLOT 1', at(20, 21, 58), 2, 'Palm Strip', 2, 41280, 42.0, ['elena', 'mateo']),
+    slotData('auto', 'AUTOSAVE', at(19, 23, 12), 2, 'Palm Strip', 2, 41280, 42.0, ['elena', 'mateo']),
+    slotData('1', 'SLOT 1', at(19, 22, 54), 2, 'Palm Strip', 2, 41280, 42.0, ['elena', 'mateo']),
     slotData('2', 'SLOT 2', at(18, 19, 31), 1, 'Harbor Docks', 1, 21350, 18.0, ['elena']),
     slotData('3', 'SLOT 3', 0, 0, 'Palm Strip', 0, 0, 0, []),
   ];

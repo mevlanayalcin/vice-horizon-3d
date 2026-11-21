@@ -20,6 +20,20 @@ export function createStageGlue(app) {
   // The manual slot this session last saved to or loaded from; the city menu's save pill names it.
   let activeSlot = '1';
   let shotReadyFrames = 0;
+  let restartArmed = false;
+  let restartTimer = null;
+
+  function resetRestartConfirm() {
+    restartArmed = false;
+    clearTimeout(restartTimer);
+    restartTimer = null;
+    const btn = document.getElementById('restartBtn');
+    if (btn) {
+      const label = btn.querySelector('.btn-label');
+      if (label) label.textContent = 'RESTART STORY';
+      btn.classList.remove('confirm');
+    }
+  }
 
   /** Back into the city after a menu: HUD on, overlays off, camera behind the player. */
   function resumePlay() {
@@ -44,6 +58,7 @@ export function createStageGlue(app) {
   }
 
   function newGame(startMission = true) {
+    resetRestartConfirm();
     app.initAudioOnce();
     resumePlay();
     hud.hideMissionPopup();
@@ -69,7 +84,6 @@ export function createStageGlue(app) {
     if (startMission) missions.startMission(0, true);
     hud.notify('Welcome to Solaris Bay', 'mission', 3000);
     hud.setHint('WASD MOVE · SHIFT SPRINT · E / F STEAL A CAR · R RADIO · ESC PAUSE');
-    save.write('auto', snapshot(game));
     refreshTitle();
   }
 
@@ -101,6 +115,7 @@ export function createStageGlue(app) {
   }
 
   function quitToTitle() {
+    resetRestartConfirm();
     app.mode = 'title';
     app.vehicle = null;
     combat.player.inVehicle = null;
@@ -140,6 +155,7 @@ export function createStageGlue(app) {
 
   function pauseGame() {
     if (app.mode !== 'playing') return;
+    resetRestartConfirm();
     app.mode = 'paused';
     hud.showPause(true);
     refreshPauseSlots();
@@ -149,6 +165,7 @@ export function createStageGlue(app) {
 
   function resumeGame() {
     if (app.mode !== 'paused') return;
+    resetRestartConfirm();
     app.mode = 'playing';
     hud.showPause(false);
   }
@@ -171,7 +188,24 @@ export function createStageGlue(app) {
     app.initAudioOnce();
     if (audio.ready) audio.playUI();
     switch (action) {
-      case 'new': case 'restart': newGame(true); break;
+      case 'new': newGame(true); break;
+      case 'restart':
+        if (!restartArmed) {
+          restartArmed = true;
+          const btn = document.getElementById('restartBtn');
+          if (btn) {
+            const label = btn.querySelector('.btn-label');
+            if (label) label.textContent = 'CLICK AGAIN TO CONFIRM';
+            btn.classList.add('confirm');
+          }
+          clearTimeout(restartTimer);
+          restartTimer = setTimeout(resetRestartConfirm, 5000);
+          hud.notify('Click RESTART STORY again to confirm', 'warn', 2600);
+          break;
+        }
+        resetRestartConfirm();
+        newGame(true);
+        break;
       case 'continue': continueGame(); break;
       case 'controls': hud.showControls(true); break;
       case 'closeControls': hud.showControls(false); break;
@@ -465,7 +499,7 @@ export function createStageGlue(app) {
   };
 
   return {
-    handleAction, newGame, pauseGame, resumeGame, refreshTitle, showStoryComplete, shotFrame, boot, slotTime,
+    handleAction, newGame, continueGame, pauseGame, resumeGame, refreshTitle, showStoryComplete, shotFrame, boot, slotTime,
     get activeSlot() { return activeSlot; },
   };
 }

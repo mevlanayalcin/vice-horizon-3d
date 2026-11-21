@@ -654,7 +654,8 @@ export function createCombat(world, bus) {
       bus.onKill?.(enemy);
       const cash = enemy.cash;
       player.cash += cash;
-      player.respect += 12;
+      if (bus.addRespect) bus.addRespect(12);
+      else player.respect += 12;
       bus.notify?.(`+$${cash}  ·  +12 respect`, 'cash');
     } else {
       bus.onHitEnemy?.(enemy);
@@ -699,7 +700,7 @@ export function createCombat(world, bus) {
     if (!player.inVehicle) {
       // Movement relative to the camera.
     const forward = [Math.sin(cameraYaw), Math.cos(cameraYaw)];
-    const right = [Math.cos(cameraYaw), -Math.sin(cameraYaw)];
+    const right = [-Math.cos(cameraYaw), Math.sin(cameraYaw)];
     let mx = 0, mz = 0;
     if (input.forward) { mx += forward[0]; mz += forward[1]; }
     if (input.back) { mx -= forward[0]; mz -= forward[1]; }

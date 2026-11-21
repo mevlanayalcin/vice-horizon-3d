@@ -111,7 +111,7 @@ const bus = {
     hud.announce(`Hurt. ${Math.ceil(amount)} damage.`);
   },
   onPlayerDeath: () => {
-    hud.notify('WASTED · medical bill $500', 'wanted', 5000);
+    hud.notify('FLATLINED · hospital bill $500', 'wanted', 5000);
     sfx('playExplosion');
     setTimeout(() => respawnPlayer(), 1700);
   },
@@ -137,7 +137,14 @@ const bus = {
     if (missions.state.storyComplete) setTimeout(() => glue.showStoryComplete(), 700);
   },
   storyComplete: () => { save.write('auto', snapshot(game)); glue.refreshTitle(); },
+  addRespect: (amount, reason) => progression.addRespect(amount, reason),
   findVehicleNear: (x, z, maxDist) => findVehicleNear(x, z, maxDist),
+  spawnMissionCar: (type, x, z, heading) => {
+    const car = createVehicle(type, x, z, heading, { parked: true, mission: true });
+    car.y = world.groundHeight(x, z) + 0.02;
+    parkedVehicles.push(car);
+    return car;
+  },
   playerPosition: () => ({ x: combat.player.x, z: combat.player.z }),
   playerVehicle: () => currentVehicle,
   notifyOnce: (() => {
@@ -266,12 +273,14 @@ function liveMapState() {
 
 function respawnPlayer() {
   const p = combat.player;
+  const activeIndex = missions.active ? missions.index : -1;
   Object.assign(p, { dead: false, health: 100, armor: 25, cash: Math.max(0, p.cash - 500), x: SAFEHOUSE.x + 16, z: SAFEHOUSE.z + 16 });
   Object.assign(p, { y: world.groundHeight(p.x, p.z), velocityX: 0, velocityZ: 0, inVehicle: null, cover: null });
   deathHandled = false;
   currentVehicle = null;
   police.clear();
   combat.clearEnemies();
+  if (activeIndex >= 0) missions.startMission(activeIndex, false);
   rig.yaw = Math.PI;
   hud.notify('Patched up at the Safehouse · -$500', 'warn', 4000);
 }
@@ -355,15 +364,27 @@ window.addEventListener('keydown', (event) => {
     else if (mode === 'playing') glue.pauseGame();
     else if (mode === 'paused') glue.resumeGame();
     else if (!document.getElementById('controlsScreen').classList.contains('hidden')) hud.showControls(false);
+    else if (!document.getElementById('slotsScreen').classList.contains('hidden')) hud.showSlots(false);
     return;
   }
+  const titleOverlayOpen = () => !document.getElementById('controlsScreen').classList.contains('hidden')
+    || !document.getElementById('slotsScreen').classList.contains('hidden');
   if (code === 'KeyP' && mode === 'playing') { glue.pauseGame(); return; }
   if (code === 'Enter') {
-    if (mode === 'title') glue.newGame(true);
-    else if (mode === 'paused') glue.resumeGame();
+    if (mode === 'title') {
+      if (titleOverlayOpen()) return;
+      event.preventDefault();
+      glue.continueGame();
+    } else if (mode === 'paused') glue.resumeGame();
     return;
   }
-  if (mode === 'title' && code === 'Space') glue.newGame(true);
+  if (mode === 'title' && code === 'Space') {
+    if (!titleOverlayOpen()) {
+      event.preventDefault();
+      glue.continueGame();
+    }
+    return;
+  }
   if (mode !== 'playing' || isShot) return;
 
   if (code === 'KeyR' && !currentVehicle) {
@@ -405,9 +426,12 @@ canvas.addEventListener('pointerdown', (event) => {
   if (isShot) return;
   if (event.button === 2) { aimDown = true; return; }
   if (event.button !== 0) return;
+  if (mode === 'playing' && event.pointerType !== 'touch' && document.pointerLockElement !== canvas && canvas.requestPointerLock) {
+    canvas.requestPointerLock();
+    return;
+  }
   mouseDown = true;
   pressedKeys.add('Mouse0');
-  if (mode === 'playing' && document.pointerLockElement !== canvas && canvas.requestPointerLock) canvas.requestPointerLock();
 });
 window.addEventListener('pointerup', (event) => {
   if (event.button === 0 || event.pointerType === 'touch') mouseDown = false;
@@ -441,7 +465,7 @@ function driveStep(car, dt) {
   car.nitroRecharge = crew.nitroRecharge; // Elena on comms tunes the nitro refill.
   const events = updateVehicle(car, {
     throttle: (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0),
-    steer: (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0),
+    steer: (keys.has('KeyA') ? 1 : 0) - (keys.has('KeyD') ? 1 : 0),
     handbrake: keys.has('Space'),
     boost: held('ShiftLeft', 'ShiftRight') || crew.surging,
   }, dt, world);
@@ -460,7 +484,7 @@ function driveStep(car, dt) {
   if (car.health <= 0 || car.wrecked) {
     sfx('playExplosion');
     hud.notify('Vehicle destroyed', 'wanted', 2600);
-    p.hurtPlayer(18);
+    combat.hurtPlayer(18);
     exitVehicle();
     Object.assign(car, { health: 0, wrecked: true, smoke: 1 });
     return;
@@ -485,7 +509,7 @@ function collectPickups(dt) {
     if (token.taken || Math.hypot(p.x - token.x, p.z - token.z) >= 2.4) continue;
     token.taken = true;
     p.cash += 250;
-    p.respect += 25;
+    progression.addRespect(25);
     hud.notify('+$250 · SUN TOKEN', 'cash', 2600);
     bus.pickup(token.x, 1.2, token.z, PALETTE.gold);
     sfx('playPickup', 'cash');
@@ -652,6 +676,7 @@ function frame(now) {
   if (mode === 'title') {
     rig.titleOrbit(elapsed);
     hud.setPlaying(false, false);
+    audio.update(dt, { wanted: 0 });
   } else if (mode === 'playing') {
     accumulator += dt;
     let steps = 0;
@@ -665,6 +690,7 @@ function frame(now) {
     accumulator = 0;
     updateCamera(dt);
     hud.setPlaying(true, !!currentVehicle);
+    audio.update(dt, { wanted: 0 });
     if (mode === 'menu' && (menuRedraw += 1) % 6 === 1) cityMenu.render(liveMapState());
   }
   renderer.resize();
