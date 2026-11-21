@@ -4,7 +4,7 @@
 [![rank](https://make.fun/badge/gta6-01/mevlanayalcin/vice-horizon-3d/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/mevlanayalcin/vice-horizon-3d/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-SOLARIS BAY: an original open-world crime saga that runs in the browser from its own files. A procedural sun-soaked coastal city in pure WebGL2: twenty-five hand-written ES modules, no engine, no assets and no network request. Steal and drive any civilian car, run Elena and Mateo's eight-job story across five districts, fight from cover with Mateo at your shoulder, win district standing, outrun a five-star SBPD response with roadblocks, flares and the Air One helicopter, tune your cars at the Safehouse Garage and climb five street ranks from the Palm Strip to Starlight Key.
+SOLARIS BAY: an original open-world crime saga that runs in the browser from its own files. A procedural sun-soaked coastal city in pure WebGL2: twenty-eight hand-written ES modules, no engine, no assets and no network request. Steal and drive any civilian car, run Elena and Mateo's eight-job story across five districts, fight from cover with Mateo at your shoulder, win district standing, outrun a five-star SBPD response with roadblocks, flares and the Air One helicopter, tune your cars at the Safehouse Garage and climb five street ranks from the Palm Strip to Starlight Key.
 
 What you can do:
 
@@ -31,7 +31,7 @@ The sky (`renderer3d.js`) layers a tropical sunset by the sun's height: a molten
 
 The four screenshots are live 1280×720 frames of the game's own code in Chromium, staged with photo mode (`shotstage.js`, `?shot=start|chase|foot|menu`).
 
-The architecture overview at the top of `game/js/main.js` maps every subsystem to its module and lists the controls.
+The header of `game/js/main.js` lists the subsystems in import order (gameplay first) and the controls.
 
 ## Run it
 

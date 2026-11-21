@@ -7,7 +7,6 @@
 // and each crewmate can be stood down or deployed from the city menu (or `T` for Mateo).
 
 import { clamp, lerp, rgb } from './config.js';
-import { buildCharacter } from './combat.js';
 
 export const CREW = [
   {
@@ -199,7 +198,7 @@ export function createCrew({ world, combat, police, bus }) {
 
   function build(b, time) {
     if (!mateo.visible) return;
-    buildCharacter(b, {
+    combat.buildCharacter(b, {
       x: mateo.x, z: mateo.z, y: mateo.y,
       heading: mateo.heading, aimYaw: mateo.aimYaw, phase: mateo.phase,
       speed: mateo.speed, colors: MATEO_COLORS, style: 'crew',

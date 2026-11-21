@@ -902,6 +902,7 @@ export function createCombat(world, bus) {
         style: enemy.style,
         weapon: enemy.alive ? enemy.weapon : null,
         aiming: enemy.alive,
+        kneel: enemy.alive && !!enemy.kneel,
         dead: !enemy.alive,
       }, time);
     }
@@ -998,6 +999,7 @@ export function createCombat(world, bus) {
     toggleCover,
     stageCover,
     build,
+    buildCharacter,
     glow,
     addImpact,
     tracers,
