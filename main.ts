@@ -32,25 +32,42 @@ const SCREENSHOT_BUDGET = 262144;
 const SCREENSHOT_MAX = 4;
 const GAME_FILE_MAX = 993;
 const GAME_BYTE_MAX = 50331648;
+const TEXT_MAX = 163840;
+// Our own ceiling for the finished dossier, well inside the kit's 4 MiB limit: the four
+// screenshots plus the source text land near 1 MiB, so 1.5 MiB catches an oversized image
+// or a runaway module before submission.
+const DOSSIER_BUDGET = 1572864;
 
 const gameDir = join(here, 'game');
 const shotsDir = join(here, 'screenshots');
 
-function countFiles(dir) {
+/** File count and total bytes under a directory, walked in name order. */
+function measure(dir) {
   let files = 0;
+  let bytes = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) files += countFiles(path);
-    else files += 1;
+    if (entry.isDirectory()) {
+      const inner = measure(path);
+      files += inner.files;
+      bytes += inner.bytes;
+    } else {
+      files += 1;
+      bytes += statSync(path).size;
+    }
   }
-  return files;
+  return { files, bytes };
 }
 
 if (!existsSync(join(gameDir, 'index.html'))) {
   throw new Error('game/index.html is missing — the entry has nothing to hand in');
 }
-if (countFiles(gameDir) > GAME_FILE_MAX) {
-  throw new Error(`game/ holds more than ${GAME_FILE_MAX} files`);
+const game = measure(gameDir);
+if (game.files > GAME_FILE_MAX) {
+  throw new Error(`game/ holds ${game.files} files, over ${GAME_FILE_MAX}`);
+}
+if (game.bytes > GAME_BYTE_MAX) {
+  throw new Error(`game/ holds ${game.bytes} bytes, over ${GAME_BYTE_MAX}`);
 }
 
 mkdirSync(out, { recursive: true });
@@ -71,13 +88,15 @@ for (const name of shots) {
   cpSync(join(shotsDir, name), join(out, 'screenshots', name));
 }
 
-writeFileSync(
-  join(out, 'dossier.json'),
-  buildDossier(out, {
-    text_max_bytes: 163840,
-    screenshots: { max: SCREENSHOT_MAX, max_bytes: SCREENSHOT_BUDGET },
-    game_max_files: GAME_FILE_MAX,
-    game_max_bytes: GAME_BYTE_MAX,
-    game_path_max_bytes: 1000,
-  }),
-);
+const dossier = buildDossier(out, {
+  text_max_bytes: TEXT_MAX,
+  screenshots: { max: SCREENSHOT_MAX, max_bytes: SCREENSHOT_BUDGET },
+  game_max_files: GAME_FILE_MAX,
+  game_max_bytes: GAME_BYTE_MAX,
+  game_path_max_bytes: 1000,
+});
+const dossierBytes = Buffer.byteLength(dossier);
+if (dossierBytes > DOSSIER_BUDGET) {
+  throw new Error(`dossier.json is ${dossierBytes} bytes, over the ${DOSSIER_BUDGET}-byte budget`);
+}
+writeFileSync(join(out, 'dossier.json'), dossier);
