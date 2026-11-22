@@ -8,6 +8,7 @@
 import { PALETTE, SAFEHOUSE, rgb } from './config.js';
 
 const LOCKUP = [76, 2];
+const STEAL_REACH = 10;
 
 export const MISSIONS = [
   {
@@ -163,7 +164,10 @@ export function createMissions({ world, combat, police, bus, turf }) {
 
   function reset() {
     for (const m of MISSIONS) {
-      for (const s of m.steps) delete s.car;
+      for (const s of m.steps) {
+        delete s.car;
+        if (s.carPos) bus.clearWrecksNear?.(s.carPos[0], s.carPos[1], STEAL_REACH);
+      }
     }
     state.index = 0;
     state.step = -1;
@@ -179,12 +183,14 @@ export function createMissions({ world, combat, police, bus, turf }) {
     combat.clearEnemies();
   }
 
+  const isStealCar = (s, v) => !!v && !v.wrecked && !v.police && (v.id === s.car?.id || v.type === 'coupe');
+
   function ensureStealCar(s) {
     const pos = s.carPos ?? s.pos;
     if (!pos) return null;
-    const near = bus.findVehicleNear?.(pos[0], pos[1], 10);
-    let car = near && !near.wrecked && !near.police ? near : null;
+    let car = bus.findVehicleNear?.(pos[0], pos[1], STEAL_REACH, (v) => isStealCar(s, v)) ?? null;
     if (!car && s.carPos && bus.spawnMissionCar) {
+      bus.clearWrecksNear?.(s.carPos[0], s.carPos[1], STEAL_REACH);
       car = bus.spawnMissionCar('coupe', s.carPos[0], s.carPos[1], Math.PI / 2);
     }
     if (car) {
@@ -369,11 +375,11 @@ export function createMissions({ world, combat, police, bus, turf }) {
     } else if (s.type === 'steal') {
       if (s.car && (s.car.wrecked || s.car.removed)) delete s.car;
       const car = s.car ?? ensureStealCar(s);
-      if (car && !car.wrecked && p.inVehicle === car) {
+      if (isStealCar(s, p.inVehicle)) {
         police.raise(2, 'Car theft');
         bus.notify?.('Car theft · 2 stars', 'wanted');
         bus.dialogue?.('ELENA', 'That\'s the one. Now move before the Strip wakes up.');
-        car.mission = true;
+        p.inVehicle.mission = true;
         advance();
       } else if (car && !car.wrecked && !car.mission) {
         car.mission = true;

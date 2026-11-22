@@ -138,7 +138,15 @@ const bus = {
   },
   storyComplete: () => { save.write('auto', snapshot(game)); glue.refreshTitle(); },
   addRespect: (amount, reason) => progression.addRespect(amount, reason),
-  findVehicleNear: (x, z, maxDist) => findVehicleNear(x, z, maxDist),
+  findVehicleNear: (x, z, maxDist, accept) => findVehicleNear(x, z, maxDist, accept),
+  clearWrecksNear: (x, z, radius) => {
+    for (let i = parkedVehicles.length - 1; i >= 0; i -= 1) {
+      const car = parkedVehicles[i];
+      if (!car.wrecked || Math.hypot(car.x - x, car.z - z) >= radius) continue;
+      car.removed = true;
+      parkedVehicles.splice(i, 1);
+    }
+  },
   spawnMissionCar: (type, x, z, heading) => {
     const car = createVehicle(type, x, z, heading, { parked: true, mission: true });
     car.y = world.groundHeight(x, z) + 0.02;
@@ -205,14 +213,16 @@ function allVehicles() {
   return parkedVehicles.concat(traffic.cars, police.allCars());
 }
 
-function findVehicleNear(x, z, maxDist = 7) {
-  let best = null, bestDist = maxDist;
+function findVehicleNear(x, z, maxDist = 7, accept = null) {
+  let best = null, bestDist = maxDist, wreck = null, wreckDist = maxDist;
   for (const car of allVehicles()) {
-    if (car.removed) continue;
+    if (car.removed || (accept && !accept(car))) continue;
     const d = Math.hypot(car.x - x, car.z - z);
-    if (d < bestDist) { bestDist = d; best = car; }
+    if (car.wrecked) {
+      if (d < wreckDist) { wreckDist = d; wreck = car; }
+    } else if (d < bestDist) { bestDist = d; best = car; }
   }
-  return best;
+  return best ?? wreck;
 }
 
 /** The city-progress chip; staged shots pin their own numbers. */
@@ -513,6 +523,7 @@ function collectPickups(dt) {
     hud.notify('+$250 · SUN TOKEN', 'cash', 2600);
     bus.pickup(token.x, 1.2, token.z, PALETTE.gold);
     sfx('playPickup', 'cash');
+    if (!isShot) save.write('auto', snapshot(game));
     glue.refreshTitle();
   }
   for (const pickup of pickups) {

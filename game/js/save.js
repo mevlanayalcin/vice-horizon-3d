@@ -178,6 +178,7 @@ export function snapshot(game) {
     player: { x: p.inVehicle ? p.inVehicle.x : p.x, z: p.inVehicle ? p.inVehicle.z : p.z, onFoot: !p.inVehicle },
     district: game.world.districtName(p.x, p.z),
     tokens: game.tokens.filter((t) => t.taken).length,
+    collectedTokens: game.tokens.flatMap((t, i) => (t.taken ? [i] : [])),
     peakWanted: Math.max(game.police.peak, game.police.wanted),
     playTime: game.playTime,
     hour: game.hour,
@@ -216,6 +217,8 @@ export function applySnapshot(game, data) {
   game.missions.state.nextTimer = 0;
   game.missions.state.startingSoon = false;
   game.missions.state.index = Math.min(MISSIONS.length - 1, Math.max(0, Number(data.missionIndex) || 0));
+  const legacyTokens = Array.isArray(data.collectedTokens) ? -1 : Number(data.tokens) || 0;
+  game.tokens.forEach((t, i) => { t.taken = legacyTokens < 0 ? data.collectedTokens.includes(i) : i < legacyTokens; });
   if (Number.isFinite(data.hour)) game.hour = data.hour;
   if (Number.isFinite(data.playTime)) game.playTime = data.playTime;
   if (data.player) {

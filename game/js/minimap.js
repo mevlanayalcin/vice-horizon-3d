@@ -18,6 +18,7 @@ const RES = 2; // base canvas pixels per metre
 const TURF_CELL = 5; // metres per turf-layer pixel
 const FONT = '"Arial Black", "Helvetica Neue", "DejaVu Sans", sans-serif';
 const UI_FONT = '"Helvetica Neue", "DejaVu Sans", Arial, sans-serif';
+const LABEL_LIFT_OFF_ROUTE = { key: 24 };
 
 const INK = {
   deepSea: '#07263a',
@@ -632,7 +633,8 @@ export function createMapPainter(world) {
 
     // District names, with standing and tier for the five turf districts.
     for (const d of DISTRICTS) {
-      const [dx, dy] = project(d.x, d.z);
+      const [dx, py] = project(d.x, d.z);
+      const dy = py - (LABEL_LIFT_OFF_ROUTE[d.id] ?? 0);
       label(g, d.name.toUpperCase(), dx, dy, 15, d.color);
       const turf = TURF.find((t) => t.id === d.id);
       if (turf && s?.turf) {
