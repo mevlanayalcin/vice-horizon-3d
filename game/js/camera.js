@@ -1,4 +1,4 @@
-// Solaris Bay v10 module: camera (chase, on-foot & aerial overview rig).
+// Solaris Bay v11 module: camera (chase, on-foot & aerial overview rig).
 // camera.js — the third-person camera rig. A chase camera that stretches and widens
 // with speed, shakes on landings and drifts and lets the mouse orbit; an over-the-
 // shoulder on-foot camera that tightens when aiming and stays out of walls; and the

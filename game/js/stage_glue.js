@@ -20,9 +20,27 @@ export function createStageGlue(app) {
   // The manual slot this session last saved to or loaded from; the city menu's save pill names it.
   let activeSlot = '1';
   let shotReadyFrames = 0;
+  let sessionStarted = false;
+  let restartArmed = false;
+  let restartTimer = 0;
+
+  function disarmRestart() {
+    restartArmed = false;
+    clearTimeout(restartTimer);
+    restartTimer = 0;
+    const btn = document.getElementById('restartBtn');
+    if (btn) {
+      btn.classList.remove('confirm');
+      const label = btn.querySelector('.btn-label');
+      if (label) label.textContent = 'RESTART STORY';
+    }
+  }
 
   /** Back into the city after a menu: HUD on, overlays off, camera behind the player. */
   function resumePlay() {
+    sessionStarted = true;
+    app.cancelRespawn?.();
+    disarmRestart();
     app.mode = 'playing';
     hud.showTitle(false);
     hud.showPause(false);
@@ -38,9 +56,20 @@ export function createStageGlue(app) {
 
   /** Start the next unfinished job of a loaded story, or free roam when it is all done. */
   function resumeStory() {
-    const next = MISSIONS.findIndex((_, i) => !missions.state.done[i]);
-    if (next >= 0 && !missions.state.storyComplete) missions.startMission(next, true);
-    else hud.notify('Story complete · free roam', 'mission', 4000);
+    if (missions.state.storyComplete) {
+      hud.objective('', null);
+      hud.notify('Story complete · free roam', 'mission', 4000);
+      return;
+    }
+    const idx = missions.state.index;
+    const next = (idx >= 0 && idx < MISSIONS.length && !missions.state.done[idx])
+      ? idx
+      : MISSIONS.findIndex((_, i) => !missions.state.done[i]);
+    if (next >= 0) missions.startMission(next, true);
+    else {
+      hud.objective('', null);
+      hud.notify('Story complete · free roam', 'mission', 4000);
+    }
   }
 
   function newGame(startMission = true) {
@@ -50,12 +79,14 @@ export function createStageGlue(app) {
     combat.reset(world.spawn.x, world.spawn.z);
     const p = combat.player;
     p.cash = 640;
+    p.respect = 0;
     p.weapons = ['fists', 'pistol'];
     p.weaponSlot = 2;
     Object.assign(p.ammo.pistol, { mag: 12, reserve: 96 });
     Object.assign(p.ammo.smg, { mag: 30, reserve: 180 });
     Object.assign(p.ammo.shotgun, { mag: 6, reserve: 36 });
     police.clear();
+    police.setPeak(0);
     missions.reset();
     combat.clearEnemies();
     for (const token of tokens) token.taken = false;
@@ -69,7 +100,6 @@ export function createStageGlue(app) {
     if (startMission) missions.startMission(0, true);
     hud.notify('Welcome to Solaris Bay', 'mission', 3000);
     hud.setHint('WASD MOVE · SHIFT SPRINT · E / F STEAL A CAR · R RADIO · ESC PAUSE');
-    save.write('auto', snapshot(game));
     refreshTitle();
   }
 
@@ -101,6 +131,9 @@ export function createStageGlue(app) {
   }
 
   function quitToTitle() {
+    app.cancelRespawn?.();
+    missions.cancelHeatTimer?.();
+    disarmRestart();
     app.mode = 'title';
     app.vehicle = null;
     combat.player.inVehicle = null;
@@ -115,16 +148,20 @@ export function createStageGlue(app) {
   function refreshTitle() {
     const slots = game.stagedSaves ?? save.list();
     const newest = slots.filter((s) => s.exists).sort((a, b) => b.savedAt - a.savedAt)[0];
+    const saved = !isShot && !sessionStarted && newest ? save.read(newest.slot) : null;
+    const savedTokens = saved
+      ? (Array.isArray(saved.collectedTokens) ? saved.collectedTokens.length : (Number.isFinite(saved.tokens) ? saved.tokens : 0))
+      : null;
     hud.setTitle({
-      progress: missions.progress,
+      progress: saved ? (saved.progress ?? 0) : missions.progress,
       total: MISSIONS.length,
-      cash: combat.player.cash,
-      tokens: tokens.filter((t) => t.taken).length,
-      peak: Math.max(police.peak, police.wanted),
+      cash: saved && Number.isFinite(saved.cash) ? saved.cash : combat.player.cash,
+      tokens: savedTokens !== null ? savedTokens : tokens.filter((t) => t.taken).length,
+      peak: saved && Number.isFinite(saved.peakWanted) ? saved.peakWanted : Math.max(police.peak, police.wanted),
       hasSave: !!newest,
       slotsUsed: slots.filter((s) => s.exists && s.slot !== 'auto').length,
       saveLabel: newest ? `${newest.label} · ${newest.act.split(' — ')[0]} · ${Math.round(newest.completion ?? 0)}%` : 'LATEST SAVE',
-      storyComplete: missions.state.storyComplete,
+      storyComplete: saved ? !!saved.storyComplete : missions.state.storyComplete,
     });
     hud.setTitleSlots(slots, slotTime);
   }
@@ -140,6 +177,7 @@ export function createStageGlue(app) {
 
   function pauseGame() {
     if (app.mode !== 'playing') return;
+    disarmRestart();
     app.mode = 'paused';
     hud.showPause(true);
     refreshPauseSlots();
@@ -149,6 +187,7 @@ export function createStageGlue(app) {
 
   function resumeGame() {
     if (app.mode !== 'paused') return;
+    disarmRestart();
     app.mode = 'playing';
     hud.showPause(false);
   }
@@ -170,8 +209,25 @@ export function createStageGlue(app) {
   function handleAction(action, data) {
     app.initAudioOnce();
     if (audio.ready) audio.playUI();
+    if (action !== 'restart') disarmRestart();
     switch (action) {
-      case 'new': case 'restart': newGame(true); break;
+      case 'new': newGame(true); break;
+      case 'restart':
+        if (!restartArmed) {
+          restartArmed = true;
+          const btn = document.getElementById('restartBtn');
+          if (btn) {
+            btn.classList.add('confirm');
+            const label = btn.querySelector('.btn-label');
+            if (label) label.textContent = 'CLICK AGAIN TO CONFIRM';
+          }
+          clearTimeout(restartTimer);
+          restartTimer = setTimeout(disarmRestart, 5000);
+          break;
+        }
+        disarmRestart();
+        newGame(true);
+        break;
       case 'continue': continueGame(); break;
       case 'controls': hud.showControls(true); break;
       case 'closeControls': hud.showControls(false); break;
@@ -465,7 +521,7 @@ export function createStageGlue(app) {
   };
 
   return {
-    handleAction, newGame, pauseGame, resumeGame, refreshTitle, showStoryComplete, shotFrame, boot, slotTime,
+    handleAction, newGame, continueGame, pauseGame, resumeGame, refreshTitle, showStoryComplete, shotFrame, boot, slotTime,
     get activeSlot() { return activeSlot; },
   };
 }

@@ -1,4 +1,4 @@
-// Solaris Bay v10 module: minimap (vector road-graph GPS & turf overlay).
+// Solaris Bay v11 module: minimap (vector road-graph GPS & turf overlay).
 // minimap.js — the vector map painter behind the HUD minimap and the M / Tab city map.
 //
 // The static city (sea, organic shoreline, beach, Starlight Key, pier, building footprints
@@ -298,12 +298,17 @@ export function createMapPainter(world) {
     g.restore();
   }
 
-  function carBox(g, x, y, heading, len, wid, fill) {
+  function carBox(g, x, y, heading, len, wid, fill, stroke = null) {
     g.save();
     g.translate(x, y);
     g.rotate(Math.atan2(Math.cos(heading), Math.sin(heading)));
     g.fillStyle = fill;
     g.fillRect(-len / 2, -wid / 2, len, wid);
+    if (stroke) {
+      g.strokeStyle = stroke;
+      g.lineWidth = 1.4;
+      g.strokeRect(-len / 2, -wid / 2, len, wid);
+    }
     g.restore();
   }
 
@@ -470,19 +475,23 @@ export function createMapPainter(world) {
       }
     }
 
-    // SBPD cruisers: flashing red/blue body and a vision cone while hunting.
+    // SBPD cruisers: vivid red on the full city map and on patrol; red/blue flash on minimap pursuit.
     const flash = Math.floor(t * 5) % 2 === 0;
     const hunting = (s.wanted ?? 0) > 0;
     for (const c of s.policeCars ?? []) {
       if (c.removed) continue;
       const [x, y] = project(c.x, c.z);
       if (!c.wrecked && (hunting || c.pursuit) && !c.roadblock) visionCone(g, x, y, c.heading, 62 * scale, 0.5, flash);
+      const redBlip = opts.names || (!hunting && !c.pursuit) || flash;
+      const tone = c.wrecked ? '#4a4f5a' : redBlip ? INK.police : INK.policeBlue;
       g.save();
       if (!c.wrecked) {
-        g.shadowColor = flash ? INK.police : INK.policeBlue;
-        g.shadowBlur = 8;
+        g.shadowColor = tone;
+        g.shadowBlur = opts.names ? 10 : 8;
       }
-      carBox(g, x, y, c.heading, Math.max(6, 5 * scale), Math.max(3.4, 2.4 * scale), c.wrecked ? '#4a4f5a' : flash ? INK.police : INK.policeBlue);
+      const len = opts.names ? Math.max(11, 8.5 * scale) : Math.max(6, 5 * scale);
+      const wid = opts.names ? Math.max(6.8, 4.8 * scale) : Math.max(3.4, 2.4 * scale);
+      carBox(g, x, y, c.heading, len, wid, tone, opts.names && !c.wrecked ? '#0b1018' : null);
       g.restore();
     }
     if (s.helicopter) searchlight(g, s.helicopter, project, scale, t);
@@ -502,7 +511,14 @@ export function createMapPainter(world) {
       g.stroke();
       g.globalAlpha = 1;
       pin(g, wx, wy, opts.badge * 1.05, gpsColor, wp.escape ? 'S' : wp.activity ? '!' : '★');
-      if (opts.names && wp.label) label(g, shorten(String(wp.label).toUpperCase(), 30), wx, wy - opts.badge * 3.2, 12, gpsColor);
+      if (opts.names && wp.label) {
+        const text = shorten(String(wp.label).toUpperCase(), 48);
+        g.font = `11px ${FONT}`;
+        const half = g.measureText(text).width / 2;
+        const margin = 28;
+        const lx = Math.max(margin + half, Math.min(g.canvas.width - margin - half, wx));
+        label(g, text, lx, wy + opts.badge * 2.1, 11, gpsColor);
+      }
     }
 
     if (player) {
@@ -632,7 +648,8 @@ export function createMapPainter(world) {
 
     // District names, with standing and tier for the five turf districts.
     for (const d of DISTRICTS) {
-      const [dx, dy] = project(d.x, d.z);
+      const [dx, dy0] = project(d.x, d.z);
+      const dy = d.id === 'key' ? dy0 - 24 : dy0;
       label(g, d.name.toUpperCase(), dx, dy, 15, d.color);
       const turf = TURF.find((t) => t.id === d.id);
       if (turf && s?.turf) {
@@ -647,6 +664,7 @@ export function createMapPainter(world) {
     }
     for (const lm of map.landmarks ?? []) {
       if (DISTRICTS.some((d) => d.name === lm.name)) continue;
+      if (lm.name === 'Safehouse' || lm.name === 'Solaris Vault Plaza') continue;
       const [lx, ly] = project(lm.x, lm.z);
       g.save();
       g.translate(lx, ly);

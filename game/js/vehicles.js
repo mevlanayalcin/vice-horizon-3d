@@ -1,4 +1,4 @@
-// Solaris Bay v10 module: vehicles (handling, drift, nitro & clearcoat cars).
+// Solaris Bay v11 module: vehicles (handling, drift, nitro & clearcoat cars).
 // vehicles.js — every Solaris Bay machine, how it looks and how it slides. The player's
 // car uses arcade drift physics (forward/lateral grip, handbrake, nitro boost, ramps,
 // crashes, water stalls); traffic and police cruisers share the same builder and mesh

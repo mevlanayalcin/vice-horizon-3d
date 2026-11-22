@@ -32,6 +32,14 @@ export function createCityMenu({ painter, missions, activities, progression, com
   const ring = document.getElementById('cmRing');
   let tab = 'map';
   let open = false;
+  let lastSideHtml = '';
+  let lastTurfHtml = '';
+  let lastRingHtml = '';
+  const portraitCache = new Map();
+  const portraitFor = (id) => {
+    if (!portraitCache.has(id)) portraitCache.set(id, portrait(id));
+    return portraitCache.get(id);
+  };
 
   /** Overall completion in percent, the figure from save.js that every save card shows. */
   const percent = () => completion?.() ?? 0;
@@ -81,7 +89,7 @@ export function createCityMenu({ painter, missions, activities, progression, com
       const badge = !c.recruited ? `JOINS AFTER JOB ${String(c.joins + 1).padStart(2, '0')}` : c.deployed ? c.status : 'STOOD DOWN';
       const perks = detail ? `<ul class="cm-perks">${c.perks.map((p) => `<li>${p}</li>`).join('')}</ul>` : '';
       const button = detail && c.recruited ? `<button class="cm-crew-btn" data-action="crewToggle" data-crew="${c.id}">${c.deployed ? 'STAND DOWN' : 'DEPLOY'}</button>` : '';
-      return `<div class="cm-crew ${state}" style="--c:${c.color}"><span class="cm-crew-pic">${portrait(c.id)}</span>
+      return `<div class="cm-crew ${state}" style="--c:${c.color}"><span class="cm-crew-pic">${portraitFor(c.id)}</span>
         <div class="cm-crew-id"><b>${c.name.toUpperCase()}</b><em>${c.role.toUpperCase()}</em><span class="cm-crew-status"><i></i>${badge}</span></div>${button}${perks}</div>`;
     }).join('')}</div>`;
   }
@@ -213,30 +221,43 @@ export function createCityMenu({ painter, missions, activities, progression, com
     const live = crew.roster().filter((c) => c.active).length;
     const u = progression.state.upgrades;
     const stages = Object.values(u).reduce((n, v) => n + v, 0);
+    let html = '';
     if (tab === 'saves') {
-      side.innerHTML = card('SAVE SLOTS', '3 SLOTS + AUTOSAVE · LOCALSTORAGE', saveCards(true))
+      html = card('SAVE SLOTS', '3 SLOTS + AUTOSAVE · LOCALSTORAGE', saveCards(true))
         + '<div class="cm-card"><div class="cm-note">Saves stay in this browser. Esc pauses to save, load or delete, and the title screen\'s LOAD GAME lists every slot.</div></div>';
     } else if (tab === 'story') {
-      side.innerHTML = card('THE SOLARIS BAY JOB', `${done} / ${MISSIONS.length} JOBS`, storyDetail(), 'cm-scroll');
+      html = card('THE SOLARIS BAY JOB', `${done} / ${MISSIONS.length} JOBS`, storyDetail(), 'cm-scroll');
     } else if (tab === 'crew') {
-      side.innerHTML = card('CREW', `${live} / 2 DEPLOYED`, crewTiles(true)) + turfDetail();
+      html = card('CREW', `${live} / 2 DEPLOYED`, crewTiles(true)) + turfDetail();
     } else if (tab === 'activities') {
-      side.innerHTML = activityDetail();
+      html = activityDetail();
     } else if (tab === 'garage') {
-      side.innerHTML = garageDetail();
+      html = garageDetail();
     } else if (tab === 'stats') {
-      side.innerHTML = statsDetail();
+      html = statsDetail();
     } else {
-      side.innerHTML = card('STORY JOBS', `${done} / ${MISSIONS.length} · MEDALS G / S / B`, storyGrid())
+      html = card('STORY JOBS', `${done} / ${MISSIONS.length} · MEDALS G / S / B`, storyGrid())
         + card('DEPLOYED CREW', `${live} / 2 ON THE JOB`, crewTiles(false))
         + card('ACTIVITIES', streakText(), activityGrid())
         + card('GARAGE UPGRADES', `${stages} / 12 STAGES · ${(PAINTS.find((p) => p.id === progression.state.paint)?.name ?? 'Factory').toUpperCase()}`, upgradePips(), 'cm-tight')
         + card('SAVES', 'SLOT 1-3 · SAVE / LOAD', saveCards(false), 'cm-saves-card');
     }
+    if (html !== lastSideHtml) {
+      lastSideHtml = html;
+      side.innerHTML = html;
+    }
     [...tabs.children].forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
     turfBox.classList.toggle('hidden', tab === 'crew');
-    turfBox.innerHTML = turfBars();
-    ring.innerHTML = ringSvg(percent());
+    const turfHtml = turfBars();
+    if (turfHtml !== lastTurfHtml) {
+      lastTurfHtml = turfHtml;
+      turfBox.innerHTML = turfHtml;
+    }
+    const ringHtml = ringSvg(percent());
+    if (ringHtml !== lastRingHtml) {
+      lastRingHtml = ringHtml;
+      ring.innerHTML = ringHtml;
+    }
     savePill();
   }
 

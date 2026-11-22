@@ -58,6 +58,8 @@ export function createSave() {
         crew: Object.entries(data?.crew?.recruited ?? {}).filter(([, on]) => on).map(([id]) => id),
         storyComplete: !!data?.storyComplete,
         completion: Number.isFinite(data?.completion) ? data.completion : 0,
+        tokens: Array.isArray(data?.collectedTokens) ? data.collectedTokens.length : (Number.isFinite(data?.tokens) ? data.tokens : 0),
+        peakWanted: Number.isFinite(data?.peakWanted) ? data.peakWanted : 0,
         act: actLabel(data?.missionIndex ?? 0, !!data?.storyComplete),
       });
     }
@@ -149,17 +151,30 @@ export function completionOf(game) {
   });
 }
 
+/** The job index a save points at: the live job, or the next unfinished one after a finish. */
+function currentMissionIndex(game) {
+  const m = game.missions;
+  if (m.state.storyComplete) return MISSIONS.length - 1;
+  if (m.active) return m.index;
+  const next = m.state.done.findIndex((d) => !d);
+  return next >= 0 ? next : m.index;
+}
+
 /** The name a slot gets: the job in progress, or the next one up. */
 function slotName(game) {
   const m = game.missions;
   if (m.state.storyComplete) return 'Free roam · the city is yours';
-  const index = m.active ? m.index : m.state.done.findIndex((d) => !d);
+  const index = currentMissionIndex(game);
   const def = MISSIONS[index >= 0 ? index : 0];
   return `${def.code} · ${def.name}`;
 }
 
 export function snapshot(game) {
   const p = game.combat.player;
+  const collectedTokens = game.tokens.reduce((acc, t, i) => {
+    if (t.taken) acc.push(i);
+    return acc;
+  }, []);
   return {
     name: slotName(game),
     cash: p.cash,
@@ -169,7 +184,7 @@ export function snapshot(game) {
     weaponSlot: p.weaponSlot,
     weapons: p.weapons.slice(),
     ammo: JSON.parse(JSON.stringify(p.ammo)),
-    missionIndex: game.missions.index,
+    missionIndex: currentMissionIndex(game),
     progress: game.missions.progress,
     storyComplete: game.missions.state.storyComplete,
     done: game.missions.state.done.slice(),
@@ -177,7 +192,8 @@ export function snapshot(game) {
     completion: completionOf(game),
     player: { x: p.inVehicle ? p.inVehicle.x : p.x, z: p.inVehicle ? p.inVehicle.z : p.z, onFoot: !p.inVehicle },
     district: game.world.districtName(p.x, p.z),
-    tokens: game.tokens.filter((t) => t.taken).length,
+    tokens: collectedTokens.length,
+    collectedTokens,
     peakWanted: Math.max(game.police.peak, game.police.wanted),
     playTime: game.playTime,
     hour: game.hour,
@@ -211,6 +227,7 @@ export function applySnapshot(game, data) {
   game.missions.state.done = game.missions.state.done.map(Boolean);
   game.missions.state.ratings = MISSIONS.map((_, i) => (['G', 'S', 'B'].includes(data.ratings?.[i]) ? data.ratings[i] : null));
   game.missions.state.storyComplete = !!data.storyComplete;
+  game.missions.cancelHeatTimer?.();
   game.missions.state.active = false;
   game.missions.state.step = -1;
   game.missions.state.nextTimer = 0;
@@ -228,6 +245,17 @@ export function applySnapshot(game, data) {
     p.velocityZ = 0;
   }
   game.police.clear();
+  game.police.setPeak(Math.max(0, Math.min(5, Math.floor(Number(data.peakWanted) || 0))));
+  for (const token of game.tokens) token.taken = false;
+  if (Array.isArray(data.collectedTokens)) {
+    for (const idx of data.collectedTokens) {
+      const i = Math.floor(Number(idx));
+      if (Number.isInteger(i) && i >= 0 && i < game.tokens.length) game.tokens[i].taken = true;
+    }
+  } else if (Number.isFinite(data.tokens) && data.tokens > 0) {
+    const n = Math.min(game.tokens.length, Math.max(0, Math.floor(data.tokens)));
+    for (let i = 0; i < n; i += 1) game.tokens[i].taken = true;
+  }
   game.combat.clearEnemies();
   if (data.weapons?.includes('smg')) game.combat.giveWeapon('smg');
   if (data.weapons?.includes('shotgun')) game.combat.giveWeapon('shotgun');

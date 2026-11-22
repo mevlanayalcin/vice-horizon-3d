@@ -141,6 +141,11 @@ export function createCrew({ world, combat, police, bus }) {
   function useAbility(id) {
     const def = ABILITIES.find((a) => a.id === id);
     if (!def) return false;
+    if (def.crew !== 'nico' && !state.recruited[def.crew]) {
+      const who = CREW.find((c) => c.id === def.crew);
+      bus.notify?.(`${def.name} · ${who?.name ?? def.who} joins after Job ${String((who?.joins ?? 0) + 1).padStart(2, '0')}`, 'warn', 2200);
+      return false;
+    }
     const p = combat.player;
     if (state.cooldown[id] > 0) {
       bus.notify?.(`${def.name} · READY IN ${Math.ceil(state.cooldown[id])}s`, 'warn', 1600);
@@ -195,10 +200,11 @@ export function createCrew({ world, combat, police, bus }) {
     return ABILITIES.map((def) => {
       const cd = state.cooldown[def.id];
       const running = state.effect[def.id] > 0;
+      const locked = def.crew !== 'nico' && !state.recruited[def.crew];
       const needsCar = def.id === 'nitro' && !p.inVehicle;
       const needsHeat = def.id === 'jam' && police.wanted === 0;
-      const status = running ? 'ACTIVE' : cd > 0 ? `${Math.ceil(cd)}s` : needsCar ? 'IN VEHICLE' : needsHeat ? 'NO HEAT' : 'READY';
-      return { ...def, cooldownLeft: cd, ratio: cd / def.cooldown, running, effectLeft: state.effect[def.id], ready: cd <= 0 && !needsCar && !needsHeat, status };
+      const status = locked ? 'LOCKED' : running ? 'ACTIVE' : cd > 0 ? `${Math.ceil(cd)}s` : needsCar ? 'IN VEHICLE' : needsHeat ? 'NO HEAT' : 'READY';
+      return { ...def, locked, cooldownLeft: cd, ratio: cd / def.cooldown, running, effectLeft: state.effect[def.id], ready: !locked && cd <= 0 && !needsCar && !needsHeat, status };
     });
   }
 

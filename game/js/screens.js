@@ -51,7 +51,7 @@ ${menuItem('controls', '04', 'CONTROLS &amp; SETTINGS', 'KEYS · SOUND')}
 </div>
 <footer class="title-bottom">
 <div class="title-keys">${FOOTER_KEYS.map(keyChip).join('')}</div>
-<span class="title-build">SOLARIS BAY <b>v10</b> · WEBGL2 · 100% OFFLINE</span>
+<span class="title-build">SOLARIS BAY <b>v11</b> · WEBGL2 · 100% OFFLINE</span>
 </footer>
 </div>`;
 
@@ -122,7 +122,7 @@ ${setting('mouseSpeed', 'MOUSE SPEED', 'mouseLabel', 'NORMAL')}
 </div>`;
 
 // ------------------------------------------------------------------ pause, load, story
-const pauseBtn = (action, label, cls = '') => `<button class="menu-btn${cls}" data-action="${action}"><span class="btn-label">${label}</span><span class="btn-arrow">›</span></button>`;
+const pauseBtn = (action, label, cls = '', id = '') => `<button class="menu-btn${cls}" data-action="${action}"${id ? ` id="${id}"` : ''}><span class="btn-label">${label}</span><span class="btn-arrow">›</span></button>`;
 const pause = `<div id="pauseScreen" class="screen overlay hidden">
 <div class="modal pause-modal">
 ${head('SOLARIS BAY · PAUSED', 'RESUME ✕', 'resume')}
@@ -134,7 +134,7 @@ ${head('SOLARIS BAY · PAUSED', 'RESUME ✕', 'resume')}
 <div class="pause-actions">
 ${pauseBtn('resume', 'RESUME', ' primary')}
 ${pauseBtn('controls', 'CONTROLS &amp; SETTINGS')}
-${pauseBtn('restart', 'RESTART STORY')}
+${pauseBtn('restart', 'RESTART STORY', '', 'restartBtn')}
 ${pauseBtn('quit', 'QUIT TO TITLE')}
 <div class="pause-note">The autosave is written after every job. Click a slot to save or overwrite it, ✕ to delete.</div>
 </div>

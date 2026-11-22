@@ -1,4 +1,4 @@
-// Solaris Bay v10 module: audio (Web Audio synth SFX & 3-station FM radio).
+// Solaris Bay v11 module: audio (Web Audio synth SFX & 3-station FM radio).
 // audio.js — every sound is synthesised in the browser with Web Audio. Three original
 // radio stations run on a look-ahead sequencer: Sunset FM 96.6 (warm synthwave arpeggios
 // over a kick/snare groove), Palm Pulse 104.2 (tropical bassline, electric-piano chords,
@@ -496,6 +496,16 @@ export function createAudio() {
     if (!ready) return;
     if (ctx.state === 'suspended') return;
     const now = ctx.currentTime;
+    if (state.paused) {
+      nextNote = now + 0.08;
+      engine.gain.gain.setTargetAtTime(0, now, 0.08);
+      engine.rasp.gain.setTargetAtTime(0, now, 0.08);
+      screech.gain.gain.setTargetAtTime(0, now, 0.05);
+      siren.gain.gain.setTargetAtTime(0, now, 0.08);
+      gear = 1;
+      return;
+    }
+    if (nextNote < now - 0.25) nextNote = now + 0.05;
     if (station > 0) scheduleStation(now);
 
     // Engine: revs climb through each gear band and drop at the shift.
@@ -514,6 +524,7 @@ export function createAudio() {
       engine.rasp.gain.setTargetAtTime(state.throttle > 0 ? 0.25 + band * 0.25 : 0.08, now, 0.1);
     } else {
       engine.gain.gain.setTargetAtTime(0, now, 0.15);
+      engine.rasp.gain.setTargetAtTime(0, now, 0.1);
       gear = 1;
     }
 

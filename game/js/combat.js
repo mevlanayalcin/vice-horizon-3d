@@ -522,12 +522,28 @@ export function createCombat(world, bus) {
     for (let t = 2; t < maxDist; t += 2.2) {
       const x = origin[0] + dir[0] * t;
       const z = origin[2] + dir[2] * t;
-      if (world.insideBuilding(x, z)) {
+      const hit = world.insideBuilding(x, z);
+      if (hit && SOLID_LOS.has(hit.tag)) {
         last = t;
         break;
       }
     }
     return last;
+  }
+
+  const SOLID_LOS = new Set(['building', 'safehouse', 'terrace', 'container', 'bar', 'pier', 'crane']);
+
+  function hasLineOfSight(x1, z1, x2, z2) {
+    const dist = Math.hypot(x2 - x1, z2 - z1);
+    const steps = Math.ceil(dist / 2.2);
+    for (let i = 1; i < steps; i += 1) {
+      const t = i / steps;
+      const x = x1 + (x2 - x1) * t;
+      const z = z1 + (z2 - z1) * t;
+      const hit = world.insideBuilding(x, z);
+      if (hit && SOLID_LOS.has(hit.tag)) return false;
+    }
+    return true;
   }
 
   function fireOnce(weaponSpec, aim, muzzleBias = 0) {
@@ -654,7 +670,7 @@ export function createCombat(world, bus) {
       bus.onKill?.(enemy);
       const cash = enemy.cash;
       player.cash += cash;
-      player.respect += 12;
+      bus.addRespect?.(12);
       bus.notify?.(`+$${cash}  ·  +12 respect`, 'cash');
     } else {
       bus.onHitEnemy?.(enemy);
@@ -699,7 +715,7 @@ export function createCombat(world, bus) {
     if (!player.inVehicle) {
       // Movement relative to the camera.
     const forward = [Math.sin(cameraYaw), Math.cos(cameraYaw)];
-    const right = [Math.cos(cameraYaw), -Math.sin(cameraYaw)];
+    const right = [-Math.cos(cameraYaw), Math.sin(cameraYaw)];
     let mx = 0, mz = 0;
     if (input.forward) { mx += forward[0]; mz += forward[1]; }
     if (input.back) { mx -= forward[0]; mz -= forward[1]; }
@@ -746,10 +762,39 @@ export function createCombat(world, bus) {
         player.airborne = false;
       }
     }
+    const prevX = player.x;
+    const prevZ = player.z;
     player.x += player.velocityX * dt;
     player.z += player.velocityZ * dt;
     const hit = world.collideCircle(player.x, player.z, player.radius);
     if (hit.hit) { player.x = hit.x; player.z = hit.z; }
+    const inDeepWater = (x, z) => world.isWater(x, z) && !world.onPier?.(x, z);
+    if (inDeepWater(player.x, player.z)) {
+      if (!inDeepWater(prevX, prevZ)) {
+        if (!inDeepWater(player.x, prevZ)) {
+          player.z = prevZ;
+          player.velocityZ = 0;
+        } else if (!inDeepWater(prevX, player.z)) {
+          player.x = prevX;
+          player.velocityX = 0;
+        } else {
+          player.x = prevX;
+          player.z = prevZ;
+          player.velocityX = 0;
+          player.velocityZ = 0;
+        }
+        bus.notifyOnce?.('Deep water · stay on shore or Coral Pier', 'info', 4);
+      } else {
+        const prevDist = Math.hypot(prevX - 36, Math.max(0, prevZ - 330));
+        const nextDist = Math.hypot(player.x - 36, Math.max(0, player.z - 330));
+        if (nextDist > prevDist) {
+          player.x = prevX;
+          player.z = prevZ;
+          player.velocityX = 0;
+          player.velocityZ = 0;
+        }
+      }
+    }
     player.x = clamp(player.x, world.bounds.minX + 4, world.bounds.maxX - 4);
     player.z = clamp(player.z, world.bounds.minZ + 4, world.bounds.maxZ - 4);
     player.y = world.groundHeight(player.x, player.z) + player.jumpY;
@@ -794,6 +839,10 @@ export function createCombat(world, bus) {
       // Fire at the player.
       enemy.fireTimer -= dt;
       if (enemy.fireTimer <= 0 && dist < enemy.range) {
+        if (!hasLineOfSight(enemy.x, enemy.z, player.x, player.z)) {
+          enemy.fireTimer = 0.35;
+          continue;
+        }
         enemy.fireTimer = (enemy.weapon === 'smg' ? 0.5 : 1.0) + Math.random() * 0.6;
         const startY = enemy.y + 1.35;
         // Some rounds go at a crewmate laying down covering fire instead of the player.

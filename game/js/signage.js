@@ -1,4 +1,4 @@
-// Solaris Bay v10 module: signage (Art Deco neon signs & storefront boards).
+// Solaris Bay v11 module: signage (Art Deco neon signs & storefront boards).
 // signage.js — Solaris Bay's neon lettering. A hand-drawn stroke font (A–Z, 0–9 and a
 // little punctuation on a 4×6 grid) is bent into emissive glass tubes on the facades:
 // rooftop hotel marquees, vertical blade signs, storefront names and billboards. Every

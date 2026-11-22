@@ -1,4 +1,4 @@
-// Solaris Bay v10 module: streetprops (knockable lamps, palms & roadblocks).
+// Solaris Bay v11 module: streetprops (knockable lamps, palms & roadblocks).
 // streetprops.js — breakable street furniture. A car clipping a hydrant shears it off and
 // the stump throws a water column for a while; a car hitting a lamppost at speed knocks it
 // over: the pole pivots on its base in the direction of travel, sparks burst where it

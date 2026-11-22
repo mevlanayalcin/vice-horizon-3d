@@ -38,7 +38,7 @@ const CALLOUTS = [null,
 // Dispatch street names: roads running along x keyed by z, roads along z keyed by x.
 const STREETS = {
   x: { '-390': 'Hillcrest Road', '-260': 'Casa Hills Drive', '-130': 'Dockside Avenue', 0: 'Midtown Avenue', 130: 'Bayview Avenue', 260: 'Ocean Boulevard' },
-  z: { '-390': 'Harbor Way', '-260': 'Coral Avenue', '-130': 'Flamingo Drive', 0: 'Solaris Avenue', 130: 'Neon Parkway', 260: 'Marina Drive', 390: 'Causeway Road' },
+  z: { '-390': 'Harbor Way', '-260': 'Coral Avenue', '-130': 'Flamingo Drive', 0: 'Solaris Avenue', 130: 'Neon Parkway', 260: 'Bayside Drive', 390: 'Causeway Road' },
 };
 const HEAR = 15; // noticed this close whichever way a unit faces
 const CONE = 1.05; // half-angle of a unit's vision cone

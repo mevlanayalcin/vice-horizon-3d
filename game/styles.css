@@ -1,5 +1,5 @@
-/* SOLARIS BAY — interface styling, v10. Everything is drawn with CSS and inline SVG: no
-   images, no fetched fonts, no network. Vice-sunset Art Deco: deep ocean glass panels with
+/* SOLARIS BAY — interface styling, v11. Everything is drawn with CSS and inline SVG: no
+   images, no fetched fonts, no network. Coral-sunset Art Deco: deep ocean glass panels with
    a gold hairline, coral-to-magenta sunset accents and Bay Cyan for the crew and cover.
    Laid out for 1280 x 720 first: corner clusters around a clear centre, no overlaps. */
 
@@ -66,7 +66,7 @@ body.no-fx #speedLines, body.no-fx #damageFlash { display: none; }
 }
 
 /* ------------------------------------------------------------------ top-left: SBPD response */
-.hud-top-left { position: fixed; top: 14px; left: 16px; width: 300px; display: flex; flex-direction: column; gap: 7px; }
+.hud-top-left { position: fixed; top: 14px; left: 16px; width: 332px; display: flex; flex-direction: column; gap: 7px; }
 .dispatch-table {
   padding: 8px 10px 7px; border-color: rgba(255, 76, 95, 0.42);
   background: linear-gradient(150deg, rgba(24, 8, 16, 0.9), rgba(10, 14, 28, 0.74));
@@ -378,6 +378,7 @@ body.no-fx #speedLines, body.no-fx #damageFlash { display: none; }
 .menu-btn:hover { border-left-color: var(--gold); transform: translateX(3px); background: linear-gradient(90deg, rgba(40, 30, 30, 0.9), rgba(10, 16, 28, 0.5)); }
 .menu-btn.primary { background: linear-gradient(90deg, #ffc24b, #ff7a4d 70%, #ff4f7e); border-color: transparent; color: #1d0d06; box-shadow: 0 8px 26px rgba(255, 110, 70, 0.35); }
 .menu-btn.primary .btn-meta { color: rgba(29, 13, 6, 0.72); }
+.menu-btn.confirm { border-left-color: var(--red); border-color: rgba(255, 76, 95, 0.75); background: linear-gradient(90deg, rgba(165, 22, 38, 0.9), rgba(45, 12, 22, 0.75)); color: #fff; }
 .menu-btn[disabled] { opacity: 0.4; cursor: default; }
 .btn-index { width: 20px; font-size: 9px; font-weight: 900; opacity: 0.6; }
 .btn-label { font-size: 13px; font-weight: 900; letter-spacing: 0.14em; white-space: nowrap; }
@@ -419,7 +420,8 @@ body.no-fx #speedLines, body.no-fx #damageFlash { display: none; }
 .tc-pct { flex: none; font-family: var(--display); font-size: 22px; color: #fff; }
 .tc-pct small { font-size: 11px; color: var(--gold); }
 .tc-load { position: absolute; right: 10px; bottom: 8px; display: none; }
-.tcard.empty { border-style: dashed; background: rgba(255, 255, 255, 0.025); }
+.tcard.empty { cursor: default; border-style: dashed; background: rgba(255, 255, 255, 0.025); }
+.tcard.empty:hover { border-color: rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.025); }
 .tc-empty { display: flex; align-items: center; gap: 10px; margin-top: 6px; font-size: 9.5px; line-height: 1.35; color: #8e9aa6; }
 .tc-plus { flex: none; width: 40px; height: 40px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--dim); border: 1px dashed rgba(255, 255, 255, 0.22); }
 .title-auto { display: flex; align-items: center; gap: 7px; font-size: 8.5px; font-weight: 800; letter-spacing: 0.1em; color: #a6b1bc; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.08); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -499,6 +501,9 @@ body.no-fx #speedLines, body.no-fx #damageFlash { display: none; }
 .popup-next { font-size: 8.5px; letter-spacing: 0.18em; color: var(--muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--edge); }
 .loading { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #05080e; transition: opacity 0.7s ease, visibility 0.7s ease; }
 .loading.done { opacity: 0; visibility: hidden; }
+.loading.instant { transition: none !important; display: none !important; }
+.loading.fallback { padding: 24px; text-align: center; }
+.loading-err { max-width: 420px; margin: 4px 0 0; font-size: 12px; line-height: 1.5; color: #b7c1cc; }
 .loading-sun { width: 76px; height: 76px; border-radius: 50%; background: radial-gradient(circle at 45% 40%, #ffe6b0, #ff9b5e 55%, #ff5e7a 100%); box-shadow: 0 0 70px rgba(255, 128, 84, 0.55); }
 .loading span { font-size: 9px; letter-spacing: 0.32em; color: #cec6b8; font-weight: 900; }
 .loading-bar { width: 180px; height: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }

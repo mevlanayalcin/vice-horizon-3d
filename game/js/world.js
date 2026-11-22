@@ -1,4 +1,4 @@
-// Solaris Bay v10 module: world (7-district Solaris Bay road & building map).
+// Solaris Bay v11 module: world (7-district Solaris Bay road & building map).
 // world.js — SOLARIS BAY itself. One deterministic procedural pass builds the whole
 // coastal metropolis: road grid and boulevards, five districts plus the hills, lit
 // towers with window grids and neon crowns, art-deco hotels, warehouses and gantry
@@ -1491,7 +1491,7 @@ export function createWorld(renderer) {
     for (const [x, z, heading, type] of parking) parked.push({ x, z, heading, type });
     // Sun-token collectibles around the districts.
     const tokenSpots = [
-      [-166, 344], [-166, 432], [118, 312], [-90, 320], [65, -20], [-330, -300],
+      [-166, 344], [-166, 432], [118, 318], [-90, 320], [65, -20], [-330, -268],
       [640, 200], [600, 130], [-70, 330], [352, 290], [0, -430], [436, 200],
     ];
     for (const [x, z] of tokenSpots) tokens.push({ x, z, y: 1.3, taken: false, phase: rng() * Math.PI * 2 });
@@ -1773,11 +1773,16 @@ export function createWorld(renderer) {
     return 0;
   }
 
+  function onPier(x, z) {
+    return x > -176 && x < -156 && z >= 302 && z <= 445;
+  }
+
   function isWater(x, z) {
     if (z > 336) return true;
     if (x < -440 && z < 160) return true;
+    if (x > 760) return true;
     if (x > 520 && (z < 60 || z > 300) && !(x > 548 && x < 760 && z >= 70 && z <= 300)) return true;
-    if (x > 520 && x < 548 && z > 60 && z < 130 - 11) return true;
+    if (x > 520 && x < 548 && z >= 60 && z < 130 - 11) return true;
     if (x > 520 && x < 548 && z > 130 + 11) return true;
     return false;
   }
@@ -1860,6 +1865,7 @@ export function createWorld(renderer) {
     safehouse: SAFEHOUSE,
     spawn: CITY.spawn,
     groundHeight,
+    onPier,
     isWater,
     collideCircle,
     insideBuilding,

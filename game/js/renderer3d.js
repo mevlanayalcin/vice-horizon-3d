@@ -1,4 +1,4 @@
-// Solaris Bay v10 module: renderer3d (zero-dependency WebGL2 3D pipeline).
+// Solaris Bay v11 module: renderer3d (zero-dependency WebGL2 3D pipeline).
 // renderer3d.js — SOLARIS BAY's own WebGL2 renderer. No libraries, no textures, no
 // network: every mesh is procedural, every shader authored here. Each frame renders a
 // half-resolution planar reflection of the city (mirrored under the street plane) for

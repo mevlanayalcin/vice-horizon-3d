@@ -1,4 +1,4 @@
-// Solaris Bay v10 module: progression (garage upgrades, cash & rank state).
+// Solaris Bay v11 module: progression (garage upgrades, cash & rank state).
 // progression.js — what playing earns in Solaris Bay. Respect climbs through five
 // street ranks, each paying a cash milestone and unlocking paints and neon underglow;
 // cash buys garage upgrades at the Safehouse Garage (engine, nitro, armoured panels,

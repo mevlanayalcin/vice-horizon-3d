@@ -1,4 +1,4 @@
-// Solaris Bay v10 module: activities (races, courier, cab fares & stunt ramps).
+// Solaris Bay v11 module: activities (races, courier, cab fares & stunt ramps).
 // activities.js — Solaris Bay's side hustles, playable between and during story jobs:
 // two street races, a timed courier run, Sun Cab fares and the stunt-ramp hunt. Each
 // timed activity starts when the player rolls into its cyan start ring, runs a chain

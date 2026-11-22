@@ -195,7 +195,10 @@ export function createHud({ onAction, world }) {
     const w = `${Math.max(0, Math.min(100, pct)).toFixed(1)}%`;
     if (el.style.width !== w) el.style.width = w;
   }
-  const showLoadingDone = () => els.loading.classList.add('done');
+  const showLoadingDone = (instant = false) => {
+    if (instant) els.loading.classList.add('instant');
+    els.loading.classList.add('done');
+  };
   const announce = (text) => setText(els.status, text);
 
   // ------------------------------------------------------------ weapon rail
@@ -327,7 +330,7 @@ export function createHud({ onAction, world }) {
     setText(els.titleSlotsMeta, `${manual.filter((s) => s.exists).length} / ${manual.length} USED`);
     els.titleCards.innerHTML = manual.map((s) => {
       if (!s.exists) {
-        return `<div class="tcard empty" data-action="new" role="button"><div class="tc-head"><span class="tc-slot">${s.label}</span><span class="tc-tag">EMPTY</span></div>
+        return `<div class="tcard empty" aria-disabled="true"><div class="tc-head"><span class="tc-slot">${s.label}</span><span class="tc-tag">EMPTY</span></div>
           <div class="tc-empty"><span class="tc-plus">+</span><span>No save here yet. Start a new game, then save to ${s.label.toLowerCase()} from the pause menu or the city map.</span></div></div>`;
       }
       const pct = Math.max(0, Math.min(100, s.completion ?? 0));
@@ -348,11 +351,16 @@ export function createHud({ onAction, world }) {
     els.controls.classList.add('hidden');
     els.pause.classList.add('hidden');
     if (!show) els.slotsScreen?.classList.add('hidden');
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur?.();
   }
-  const showControls = (show = true) => els.controls.classList.toggle('hidden', !show);
+  function showControls(show = true) {
+    els.controls.classList.toggle('hidden', !show);
+    if (!show && document.activeElement && document.activeElement !== document.body) document.activeElement.blur?.();
+  }
   function showPause(show = true) {
     els.pause.classList.toggle('hidden', !show);
     if (!show) els.controls.classList.add('hidden');
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur?.();
   }
 
   /** One slot row for the pause and load lists: name, district, progress, cash, time, delete. */
@@ -393,7 +401,10 @@ export function createHud({ onAction, world }) {
   function showSlots(show, slots = [], info = {}) {
     if (!els.slotsScreen) return;
     els.slotsScreen.classList.toggle('hidden', !show);
-    if (!show) return;
+    if (!show) {
+      if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur?.();
+      return;
+    }
     els.titleSlots.innerHTML = '';
     for (const slot of slots) els.titleSlots.appendChild(slotCard(slot, 'loadSlot', { time: info.time, deletable: true }));
   }
@@ -570,7 +581,7 @@ export function createHud({ onAction, world }) {
     els.crosshair.classList.toggle('aim', hasAim && (!!aiming || (weapon && weapon.id !== 'fists')));
 
     if (mission) objective(state.objectiveText ?? els.objective.textContent, mission, state.missionStep, state.missionTotal);
-    else if (!state.missionProgress) els.missionCard.classList.add('hidden');
+    else els.missionCard.classList.add('hidden');
 
     // Speedometer with nitro and vehicle condition.
     if (vehicle) {

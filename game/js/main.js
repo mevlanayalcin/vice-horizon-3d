@@ -35,8 +35,21 @@ import { createWorld } from './world.js';
 const canvas = document.getElementById('game');
 const shotName = new URLSearchParams(window.location.search).get('shot');
 const isShot = !!shotName;
+if (isShot) document.getElementById('loading')?.classList.add('instant', 'done');
 
-const renderer = createRenderer(canvas);
+let renderer = null;
+try {
+  renderer = createRenderer(canvas);
+} catch {
+  const loading = document.getElementById('loading');
+  if (loading) {
+    loading.classList.remove('done', 'instant');
+    loading.classList.add('fallback');
+    loading.innerHTML = '<div class="loading-sun"></div><span>WEBGL2 REQUIRED</span><p class="loading-err">SOLARIS BAY needs a desktop browser with WebGL2 enabled to render the 3D city. Enable hardware acceleration and reload.</p>';
+  }
+}
+
+if (renderer) {
 const world = createWorld(renderer);
 const audio = createAudio();
 const save = createSave();
@@ -111,10 +124,13 @@ const bus = {
     hud.announce(`Hurt. ${Math.ceil(amount)} damage.`);
   },
   onPlayerDeath: () => {
-    hud.notify('WASTED · medical bill $500', 'wanted', 5000);
+    hud.notify('DOWNED · medical bill $500', 'wanted', 5000);
     sfx('playExplosion');
-    setTimeout(() => respawnPlayer(), 1700);
+    missions.cancelHeatTimer?.();
+    cancelRespawn();
+    respawnTimer = setTimeout(() => { respawnTimer = 0; respawnPlayer(); }, 1700);
   },
+  addRespect: (amount, reason = '') => progression.addRespect(amount, reason),
   onCarHurt: () => hud.flashDamage(),
   onWeapon: (weapon) => { hud.notify(weapon.name.toUpperCase(), 'info', 1500); sfx('playUI'); },
   onAbility: (def) => { sfx('playUI'); if (def.id === 'jam') sfx('playDispatch'); else if (def.id === 'patch') sfx('playPickup', 'health'); },
@@ -137,7 +153,14 @@ const bus = {
     if (missions.state.storyComplete) setTimeout(() => glue.showStoryComplete(), 700);
   },
   storyComplete: () => { save.write('auto', snapshot(game)); glue.refreshTitle(); },
-  findVehicleNear: (x, z, maxDist) => findVehicleNear(x, z, maxDist),
+  findVehicleNear: (x, z, maxDist, filter) => findVehicleNear(x, z, maxDist, filter),
+  spawnParkedVehicle: (type, x, z, heading, options = {}) => {
+    const car = createVehicle(type, x, z, heading, { parked: true, ...options });
+    car.y = world.groundHeight(x, z) + 0.02;
+    parkedVehicles.push(car);
+    return car;
+  },
+  clearWrecksNear: (x, z, radius = 12) => clearWrecksNear(x, z, radius),
   playerPosition: () => ({ x: combat.player.x, z: combat.player.z }),
   playerVehicle: () => currentVehicle,
   notifyOnce: (() => {
@@ -178,8 +201,17 @@ let chaseScare = 0;
 let mouseDown = false;
 let aimDown = false;
 let deathHandled = false;
+let respawnTimer = 0;
+let pointerLockDenied = false;
 let stageCity = null;
 let menuRedraw = 0;
+
+function cancelRespawn() {
+  if (respawnTimer) {
+    clearTimeout(respawnTimer);
+    respawnTimer = 0;
+  }
+}
 const visitedDistricts = new Set(['palm']);
 const streetProps = createStreetProps({ world, combat, progression, bus, sfx });
 const rig = createCameraRig(world);
@@ -198,14 +230,39 @@ function allVehicles() {
   return parkedVehicles.concat(traffic.cars, police.allCars());
 }
 
-function findVehicleNear(x, z, maxDist = 7) {
+function findVehicleNear(x, z, maxDist = 7, filter = null) {
   let best = null, bestDist = maxDist;
+  let bestWreck = null, bestWreckDist = maxDist;
   for (const car of allVehicles()) {
     if (car.removed) continue;
+    if (filter && !filter(car)) continue;
     const d = Math.hypot(car.x - x, car.z - z);
-    if (d < bestDist) { bestDist = d; best = car; }
+    if (d >= maxDist) continue;
+    if (car.wrecked) {
+      if (d < bestWreckDist) { bestWreckDist = d; bestWreck = car; }
+    } else if (d < bestDist) {
+      bestDist = d;
+      best = car;
+    }
   }
-  return best;
+  return best ?? bestWreck;
+}
+
+function clearWrecksNear(x, z, radius = 12) {
+  for (let i = parkedVehicles.length - 1; i >= 0; i -= 1) {
+    const car = parkedVehicles[i];
+    if (car.wrecked && Math.hypot(car.x - x, car.z - z) <= radius) {
+      car.removed = true;
+      parkedVehicles.splice(i, 1);
+    }
+  }
+  for (let i = traffic.cars.length - 1; i >= 0; i -= 1) {
+    const car = traffic.cars[i];
+    if (car.wrecked && Math.hypot(car.x - x, car.z - z) <= radius) {
+      car.removed = true;
+      traffic.cars.splice(i, 1);
+    }
+  }
 }
 
 /** The city-progress chip; staged shots pin their own numbers. */
@@ -265,15 +322,22 @@ function liveMapState() {
 }
 
 function respawnPlayer() {
+  if (mode !== 'playing') return;
   const p = combat.player;
   Object.assign(p, { dead: false, health: 100, armor: 25, cash: Math.max(0, p.cash - 500), x: SAFEHOUSE.x + 16, z: SAFEHOUSE.z + 16 });
   Object.assign(p, { y: world.groundHeight(p.x, p.z), velocityX: 0, velocityZ: 0, inVehicle: null, cover: null });
   deathHandled = false;
   currentVehicle = null;
+  missions.cancelHeatTimer?.();
   police.clear();
   combat.clearEnemies();
   rig.yaw = Math.PI;
-  hud.notify('Patched up at the Safehouse · -$500', 'warn', 4000);
+  if (missions.active) {
+    missions.restartActive();
+    hud.notify('Patched up at the Safehouse · -$500 · job reset', 'warn', 4000);
+  } else {
+    hud.notify('Patched up at the Safehouse · -$500', 'warn', 4000);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -325,8 +389,13 @@ function promptForPlayer() {
   if (currentVehicle) return `Exit ${currentVehicle.spec.name}`;
   if (combat.player.inVehicle) return null;
   const near = findVehicleNear(combat.player.x, combat.player.z, 6);
-  if (!near) return null;
+  if (!near || near.wrecked) return null;
   return near.police ? 'Police cruiser locked' : `Steal ${near.spec.name}`;
+}
+
+function overlayOpen() {
+  return !document.getElementById('controlsScreen')?.classList.contains('hidden')
+    || !document.getElementById('slotsScreen')?.classList.contains('hidden');
 }
 
 // ---------------------------------------------------------------------------
@@ -338,32 +407,54 @@ const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyF', 'KeyR
 
 window.addEventListener('keydown', (event) => {
   const code = event.code;
-  if (GAME_KEYS.has(code)) event.preventDefault();
+  if (code === 'Tab') {
+    if (mode === 'playing' || mode === 'menu') event.preventDefault();
+  } else if (GAME_KEYS.has(code) && (mode === 'playing' || mode === 'menu')) {
+    event.preventDefault();
+  }
   keys.add(code);
   if (event.repeat) return;
   pressedKeys.add(code);
   initAudioOnce();
   if (code === 'KeyM' || code === 'Tab') {
-    if (isShot) return;
+    if (isShot || overlayOpen()) return;
     if (mode === 'playing') openCityMenu('map');
     else if (mode === 'menu') closeCityMenu();
     return;
   }
   if (code === 'Escape') {
     if (isShot) return;
-    if (mode === 'menu') closeCityMenu();
+    if (!document.getElementById('controlsScreen').classList.contains('hidden')) hud.showControls(false);
+    else if (!document.getElementById('slotsScreen').classList.contains('hidden')) hud.showSlots(false);
+    else if (mode === 'menu') closeCityMenu();
     else if (mode === 'playing') glue.pauseGame();
     else if (mode === 'paused') glue.resumeGame();
-    else if (!document.getElementById('controlsScreen').classList.contains('hidden')) hud.showControls(false);
     return;
   }
   if (code === 'KeyP' && mode === 'playing') { glue.pauseGame(); return; }
   if (code === 'Enter') {
-    if (mode === 'title') glue.newGame(true);
-    else if (mode === 'paused') glue.resumeGame();
+    if (overlayOpen()) return;
+    const focused = document.activeElement?.closest?.('#titleScreen [data-action], #pauseScreen [data-action]');
+    if (focused) return;
+    if (mode === 'title') {
+      event.preventDefault();
+      if (save.hasAny()) glue.continueGame();
+      else glue.newGame(true);
+    } else if (mode === 'paused') {
+      event.preventDefault();
+      glue.resumeGame();
+    }
     return;
   }
-  if (mode === 'title' && code === 'Space') glue.newGame(true);
+  if (mode === 'title' && code === 'Space') {
+    if (overlayOpen()) return;
+    const focused = document.activeElement?.closest?.('#titleScreen [data-action]');
+    if (focused) return;
+    event.preventDefault();
+    if (save.hasAny()) glue.continueGame();
+    else glue.newGame(true);
+    return;
+  }
   if (mode !== 'playing' || isShot) return;
 
   if (code === 'KeyR' && !currentVehicle) {
@@ -399,15 +490,24 @@ window.addEventListener('keydown', (event) => {
 window.addEventListener('keyup', (event) => keys.delete(event.code));
 window.addEventListener('blur', () => { keys.clear(); mouseDown = false; aimDown = false; });
 
+document.addEventListener('pointerlockerror', () => { pointerLockDenied = true; });
 canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 canvas.addEventListener('pointerdown', (event) => {
   initAudioOnce();
   if (isShot) return;
   if (event.button === 2) { aimDown = true; return; }
   if (event.button !== 0) return;
+  if (mode === 'playing' && !pointerLockDenied && document.pointerLockElement !== canvas && canvas.requestPointerLock) {
+    try {
+      const req = canvas.requestPointerLock();
+      if (req && typeof req.catch === 'function') req.catch(() => { pointerLockDenied = true; });
+    } catch {
+      pointerLockDenied = true;
+    }
+    return;
+  }
   mouseDown = true;
   pressedKeys.add('Mouse0');
-  if (mode === 'playing' && document.pointerLockElement !== canvas && canvas.requestPointerLock) canvas.requestPointerLock();
 });
 window.addEventListener('pointerup', (event) => {
   if (event.button === 0 || event.pointerType === 'touch') mouseDown = false;
@@ -441,7 +541,7 @@ function driveStep(car, dt) {
   car.nitroRecharge = crew.nitroRecharge; // Elena on comms tunes the nitro refill.
   const events = updateVehicle(car, {
     throttle: (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0),
-    steer: (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0),
+    steer: (keys.has('KeyA') ? 1 : 0) - (keys.has('KeyD') ? 1 : 0),
     handbrake: keys.has('Space'),
     boost: held('ShiftLeft', 'ShiftRight') || crew.surging,
   }, dt, world);
@@ -456,11 +556,55 @@ function driveStep(car, dt) {
     } else if (ev === 'splash') { sfx('playSplash'); hud.notify('Engine flooded — get out of the water', 'warn', 2600); }
     else if (ev === 'landing') rig.shake = 0.4;
   }
+  // Solid collisions against parked and traffic vehicles.
+  for (const other of parkedVehicles.concat(traffic.cars)) {
+    if (other === car || other.removed) continue;
+    const dx = other.x - car.x, dz = other.z - car.z;
+    const minDist = (car.spec.width + other.spec.width) * 0.5 + 1.05;
+    const d = Math.hypot(dx, dz);
+    if (d >= minDist || d < 0.001) continue;
+    const nx = dx / d, nz = dz / d;
+    const push = minDist - d;
+    const movable = !other.wrecked && !other.staged;
+    const share = movable ? 0.65 : 1.0;
+    car.x -= nx * push * share;
+    car.z -= nz * push * share;
+    const ch = world.collideCircle(car.x, car.z, Math.max(1.6, car.spec.width * 0.72));
+    if (ch.hit) { car.x = ch.x; car.z = ch.z; }
+    if (movable) {
+      other.x += nx * push * (1 - share);
+      other.z += nz * push * (1 - share);
+      const oh = world.collideCircle(other.x, other.z, other.spec.width * 0.6);
+      if (oh.hit) { other.x = oh.x; other.z = oh.z; }
+    }
+    const ovx = other.traffic ? Math.sin(other.heading) * (other.speed ?? 0) : (other.velocityX ?? 0);
+    const ovz = other.traffic ? Math.cos(other.heading) * (other.speed ?? 0) : (other.velocityZ ?? 0);
+    const rel = (car.velocityX - ovx) * nx + (car.velocityZ - ovz) * nz;
+    if (rel > 0.4) {
+      car.velocityX -= nx * rel * 0.85;
+      car.velocityZ -= nz * rel * 0.85;
+      car.speed *= clamp(1 - rel * 0.04, 0.25, 0.88);
+      if (other.traffic) other.loopSpeed = Math.max(0.5, (other.loopSpeed ?? 4) * 0.5);
+      else if (movable) {
+        other.velocityX = (other.velocityX ?? 0) + nx * rel * 0.35;
+        other.velocityZ = (other.velocityZ ?? 0) + nz * rel * 0.35;
+      }
+      if (rel > 3.5) {
+        const dmg = Math.min(26, rel * 0.85);
+        car.health = Math.max(0, car.health - dmg * (car.damageScale ?? 1));
+        other.health = Math.max(0, other.health - dmg * 0.9);
+        if (other.health <= 0 && !other.wrecked) { other.wrecked = true; other.smoke = 1; }
+        rig.shake = Math.max(rig.shake, clamp(rel * 0.025, 0.15, 0.4));
+        sfx('playCrash', rel > 10 ? 0.95 : 0.55);
+        if (rel > 8) hud.flashDamage();
+      }
+    }
+  }
   Object.assign(p, { x: car.x, z: car.z, y: car.y, heading: car.heading });
   if (car.health <= 0 || car.wrecked) {
     sfx('playExplosion');
     hud.notify('Vehicle destroyed', 'wanted', 2600);
-    p.hurtPlayer(18);
+    combat.hurtPlayer(18);
     exitVehicle();
     Object.assign(car, { health: 0, wrecked: true, smoke: 1 });
     return;
@@ -485,10 +629,11 @@ function collectPickups(dt) {
     if (token.taken || Math.hypot(p.x - token.x, p.z - token.z) >= 2.4) continue;
     token.taken = true;
     p.cash += 250;
-    p.respect += 25;
+    progression.addRespect(25);
     hud.notify('+$250 · SUN TOKEN', 'cash', 2600);
     bus.pickup(token.x, 1.2, token.z, PALETTE.gold);
     sfx('playPickup', 'cash');
+    save.write('auto', snapshot(game));
     glue.refreshTitle();
   }
   for (const pickup of pickups) {
@@ -652,6 +797,7 @@ function frame(now) {
   if (mode === 'title') {
     rig.titleOrbit(elapsed);
     hud.setPlaying(false, false);
+    audio.update(dt, { paused: true, wanted: 0 });
   } else if (mode === 'playing') {
     accumulator += dt;
     let steps = 0;
@@ -665,6 +811,7 @@ function frame(now) {
     accumulator = 0;
     updateCamera(dt);
     hud.setPlaying(true, !!currentVehicle);
+    audio.update(dt, { paused: true, wanted: 0 });
     if (mode === 'menu' && (menuRedraw += 1) % 6 === 1) cityMenu.render(liveMapState());
   }
   renderer.resize();
@@ -682,11 +829,12 @@ const glue = createStageGlue({
   set stageCity(v) { stageCity = v; },
   get mouse() { return { mouseDown, aimDown }; },
   initAudioOnce, openCityMenu, closeCityMenu, liveMapState, policeInfo, cityProgress, findVehicleNear, enterVehicle,
-  updateGame, updateCamera, renderFrame,
+  cancelRespawn, updateGame, updateCamera, renderFrame,
 });
 window.addEventListener('load', () => renderer.resize());
 glue.boot();
 requestAnimationFrame(frame);
+}
 
 import { createStreetProps } from './streetprops.js';
 import { createStageGlue } from './stage_glue.js';
